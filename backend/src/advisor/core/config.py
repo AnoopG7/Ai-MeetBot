@@ -29,6 +29,8 @@ class Settings(BaseSettings):
     qdrant_collection: str = "finance_knowledge"
 
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/advisor"
+    database_url_sync: str = "postgresql+psycopg2://postgres:postgres@localhost:5432/advisor"
+    echo_sql: bool = False
 
     llm_provider: Literal["openai", "ollama"] = "openai"
     openai_api_key: str = ""
@@ -42,6 +44,10 @@ class Settings(BaseSettings):
     tts_provider: Literal["cartesia", "edge-tts", "elevenlabs"] = "cartesia"
     cartesia_api_key: str = ""
     cartesia_voice_id: str = "6f6a6c6c-6b6a-4e6f-8e6a-6c6c6b6a4e6f"
+
+    jwt_secret: str = "change-me-in-production-use-a-long-random-secret"
+    jwt_algorithm: str = "HS256"
+    access_token_expire_minutes: int = 1440
 
     api_host: str = "0.0.0.0"
     api_port: int = 8000

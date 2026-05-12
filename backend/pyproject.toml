@@ -18,6 +18,10 @@ dependencies = [
     "redis>=5.2",
     "qdrant-client>=1.12",
     "fastembed>=0.5",
+    "sqlalchemy[asyncio]>=2.0",
+    "asyncpg>=0.30",
+    "pyjwt>=2.9",
+    "bcrypt>=4.0",
 ]
 
 
@@ -28,7 +32,7 @@ dev = [
     "pytest-cov>=6",
     "ruff>=0.8",
     "mypy>=1.13",
-    "pyjwt>=2.9",
+    "alembic>=1.14",
 ]
 
 [tool.ruff]
@@ -37,6 +41,11 @@ line-length = 100
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP", "B", "SIM"]
+
+[tool.ruff.lint.per-file-ignores]
+"src/advisor/core/migrations/*" = ["E501"]
+"src/advisor/core/models.py" = ["E501"]
+"src/advisor/api/routes/*" = ["B008"]
 
 [tool.ruff.format]
 quote-style = "double"
