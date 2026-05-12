@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import jwt
 import pytest
+from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
 from advisor.api.app import create_app
 
 
 @pytest.fixture
-def app():
+def app() -> FastAPI:
     return create_app()
 
 

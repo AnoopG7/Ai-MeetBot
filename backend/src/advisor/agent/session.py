@@ -42,8 +42,9 @@ _FINANCE_KEYWORDS = [
 
 
 def create_stt() -> deepgram.STT:
-    if not settings.deepgram_api_key:
-        logger.warning("DEEPGRAM_API_KEY not set — STT will fail")
+    api_key = settings.deepgram_api_key
+    if not api_key:
+        logger.warning("DEEPGRAM_API_KEY not set — STT will fail at runtime")
 
     return deepgram.STT(
         model="nova-3",
@@ -54,23 +55,26 @@ def create_stt() -> deepgram.STT:
         interim_results=True,
         filler_words=True,
         keywords=_FINANCE_KEYWORDS,
-        api_key=settings.deepgram_api_key or "",
+        api_key=api_key,
     )
 
 
 def create_llm() -> openai.LLM:
     if settings.llm_provider == "ollama":
         if not settings.ollama_base_url:
-            logger.warning("OLLAMA_BASE_URL not set — LLM will fail")
+            logger.warning("OLLAMA_BASE_URL not set — LLM will fail at runtime")
         return openai.LLM(
             model=settings.ollama_model,
             base_url=settings.ollama_base_url,
             api_key="ollama",
         )
 
+    api_key = settings.openai_api_key
+    if not api_key:
+        logger.warning("OPENAI_API_KEY not set — LLM will fail at runtime")
     return openai.LLM(
         model=settings.openai_model,
-        api_key=settings.openai_api_key or "",
+        api_key=api_key,
     )
 
 
@@ -79,11 +83,15 @@ def create_session(
     vad_model: Any | None = None,
     voice_id: str | None = None,
 ) -> AgentSession[Any]:
+    cartesia_key = settings.cartesia_api_key
+    if not cartesia_key:
+        logger.warning("CARTESIA_API_KEY not set — TTS will fail at runtime")
+
     tts = cartesia.TTS(
         model="sonic-3",
         voice=voice_id or settings.cartesia_voice_id,
         speed=1.0,
-        api_key=settings.cartesia_api_key,
+        api_key=cartesia_key,
     )
 
     stt = create_stt()

@@ -2,6 +2,7 @@ services:
   livekit-server:
     image: livekit/livekit-server:latest
     command: --config /etc/livekit.yaml
+    restart: unless-stopped
     ports:
       - "7880:7880"
       - "7881:7881"
@@ -13,6 +14,7 @@ services:
 
   redis:
     image: redis:7-alpine
+    restart: unless-stopped
     ports:
       - "6379:6379"
     volumes:
@@ -25,6 +27,7 @@ services:
 
   qdrant:
     image: qdrant/qdrant:latest
+    restart: unless-stopped
     ports:
       - "6333:6333"
       - "6334:6334"
@@ -38,6 +41,7 @@ services:
 
   postgres:
     image: postgres:16-alpine
+    restart: unless-stopped
     ports:
       - "5432:5432"
     environment:
@@ -55,6 +59,7 @@ services:
   api:
     build:
       context: ./backend
+    restart: unless-stopped
     ports:
       - "8000:8000"
     command: /app/.venv/bin/uvicorn advisor.api.app:app --host 0.0.0.0 --port 8000
@@ -83,6 +88,7 @@ services:
   agent:
     build:
       context: ./backend
+    restart: unless-stopped
     command: /app/.venv/bin/python -m advisor.agent.main
     environment:
       LIVEKIT_URL: ws://livekit-server:7880
@@ -101,6 +107,10 @@ services:
       livekit-server:
         condition: service_started
       redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      qdrant:
         condition: service_healthy
 
 volumes:

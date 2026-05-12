@@ -33,7 +33,7 @@ def configure_logging() -> None:
     logging.basicConfig(
         format="%(message)s",
         stream=sys.stdout,
-        level=getattr(logging, settings.log_level.upper()),
+        level=getattr(logging, settings.log_level),
     )
 
 

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import Literal
 
@@ -35,28 +34,23 @@ class Settings(BaseSettings):
     embedding_dim: int = 384
 
     llm_provider: Literal["openai", "ollama"] = "openai"
-    openai_api_key: str | None = None
+    openai_api_key: str = ""
     openai_model: str = "gpt-4o-mini"
     ollama_base_url: str = "http://localhost:11434/v1"
     ollama_model: str = "llama3.1:8b-instruct-q4_K_M"
 
     stt_provider: Literal["deepgram", "whisper"] = "deepgram"
-    deepgram_api_key: str | None = None
+    deepgram_api_key: str = ""
 
     tts_provider: Literal["cartesia", "edge-tts", "elevenlabs"] = "cartesia"
-    cartesia_api_key: str | None = None
+    cartesia_api_key: str = ""
     cartesia_voice_id: str = "6f6a6c6c-6b6a-4e6f-8e6a-6c6c6b6a4e6f"
+
+    api_host: str = "0.0.0.0"
+    api_port: int = 8000
 
     project_root: Path = Path(__file__).resolve().parent.parent.parent.parent
     knowledge_dir: Path = project_root / "data" / "knowledge"
-
-    @property
-    def api_host(self) -> str:
-        return os.getenv("API_HOST", "0.0.0.0")
-
-    @property
-    def api_port(self) -> int:
-        return int(os.getenv("API_PORT", "8000"))
 
 
 settings = Settings()

@@ -1,18 +1,18 @@
-.PHONY: install test lint typecheck fmt dev-api dev-agent dev-frontend docker-up docker-down clean
+.PHONY: install test lint typecheck fmt dev-api dev-agent dev-frontend docker-up docker-down docker-logs docker-build clean help
 
 # ── Backend ──────────────────────────────────────────────
 
 install:
-	cd backend && uv sync --frozen
+	cd backend && uv sync
 
 test:
-	cd backend && uv run pytest -v --cov=advisor --cov-report=term
+	cd backend && PYTHONPATH=src uv run pytest -v --cov=advisor --cov-report=term
 
 lint:
 	cd backend && uv run ruff check src/ tests/
 
 typecheck:
-	cd backend && uv run mypy src/ --ignore-missing-imports
+	cd backend && PYTHONPATH=src uv run mypy src/
 
 fmt:
 	cd backend && uv run ruff format src/ tests/ && uv run ruff check --fix src/ tests/
@@ -42,21 +42,13 @@ docker-logs:
 docker-build:
 	docker compose build
 
-# ── Pre-commit ──────────────────────────────────────────
-
-pre-commit-install:
-	cd backend && uv run pre-commit install
-
-pre-commit-run:
-	cd backend && uv run pre-commit run --all-files
-
 # ── Database ────────────────────────────────────────────
 
 db-migrate:
-	cd backend && uv run alembic upgrade head
+	cd backend && PYTHONPATH=src uv run alembic upgrade head
 
 db-revision:
-	cd backend && uv run alembic revision --autogenerate -m "$(message)"
+	cd backend && PYTHONPATH=src uv run alembic revision --autogenerate -m "$(message)"
 
 # ── Cleanup ─────────────────────────────────────────────
 
@@ -83,3 +75,7 @@ help:
 	@echo "  make docker-up       Start all services"
 	@echo "  make docker-down     Stop all services"
 	@echo "  make docker-logs     Tail docker logs"
+	@echo "  make docker-build    Rebuild Docker images"
+	@echo "  make db-migrate      Run database migrations"
+	@echo "  make db-revision     Create new migration revision"
+	@echo "  make clean           Remove caches and build artifacts"

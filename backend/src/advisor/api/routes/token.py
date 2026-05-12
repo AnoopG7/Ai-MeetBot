@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import datetime
+
 from fastapi import APIRouter, HTTPException
 from livekit.api import AccessToken, VideoGrants
 from pydantic import BaseModel
@@ -29,8 +31,6 @@ async def create_token(req: TokenRequest) -> TokenResponse:
 
     if not settings.livekit_api_key or not settings.livekit_api_secret:
         raise HTTPException(status_code=500, detail="LiveKit credentials not configured")
-
-    import datetime
 
     token = (
         AccessToken(settings.livekit_api_key, settings.livekit_api_secret)
