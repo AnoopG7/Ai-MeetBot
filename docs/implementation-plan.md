@@ -1,12 +1,12 @@
 # Implementation Plan — Personal Finance Advisor AI Agent
 
-> **Approach:** Production-grade from Phase 1. No MVPs, no throwaway prototypes. Every phase ships with tests, logging, error handling, observability, and deployment-ready infrastructure.
+> **Approach:** Production-grade from Phase 1. Built on **LiveKit Agents** for real-time audio/WebRTC infrastructure. Every phase ships with tests, logging, error handling, observability.
 
 ---
 
-## Phase 1 — Foundation & Project Setup
+## Phase 1 — Foundation & LiveKit Setup
 
-**Goal:** A production-grade monorepo with CI/CD, containerization, config management, and shared abstractions. Nothing runs yet, but everything is ready to receive features.
+**Goal:** Monorepo with Docker Compose running LiveKit Server + Qdrant + Redis + PostgreSQL. Agent scaffold registers and connects.
 
 ### Tasks
 
@@ -15,14 +15,13 @@
 finance-advisor/
 ├── backend/
 │   ├── src/
-│   │   ├── advisor/           # Main package
-│   │   │   ├── api/           # FastAPI routes
-│   │   │   ├── core/          # Config, logging, exceptions
-│   │   │   ├── audio/         # TTS, STT, VAD
-│   │   │   ├── llm/           # LLM, RAG, prompts
-│   │   │   ├── vision/        # Camera, face, emotion
-│   │   │   └── models/        # Pydantic schemas
-│   │   └── main.py
+│   │   └── advisor/
+│   │       ├── agent/          # LiveKit Agent (entrypoint, tools, prompts)
+│   │       ├── rag/            # RAG pipeline, ingestion, retrieval
+│   │       ├── vision/         # CV pipeline (face, emotion, gaze)
+│   │       ├── memory/         # Mem0 + PostgreSQL storage
+│   │       ├── api/            # FastAPI (health, config, admin)
+│   │       └── core/           # Config, logging, exceptions
 │   ├── tests/
 │   ├── Dockerfile
 │   ├── pyproject.toml
@@ -30,584 +29,659 @@ finance-advisor/
 ├── frontend/
 │   ├── src/
 │   ├── Dockerfile
-│   ├── package.json
-│   └── tsconfig.json
+│   └── package.json
 ├── docker-compose.yml
 ├── Makefile
 ├── .github/workflows/
 ├── .gitignore
-├── implementation-plan.md
-└── tech-stack.md
+└── docs/
 ```
 
-**1.2 Backend Scaffolding**
-- Python 3.12+, `pyproject.toml` with all dependency groups (dev, test, prod)
-- FastAPI application factory pattern
-- Pydantic v2 settings (`BaseSettings` from env vars)
-- Structured logging via `structlog` (JSON output, request IDs)
-- Global exception handlers (HTTP + internal)
-- Health check endpoint (`GET /health`)
-- Makefile targets: `install`, `test`, `lint`, `typecheck`, `run`, `docker-build`
-- Ruff + mypy + pre-commit hooks
+**1.2 Core Dependencies**
+```toml
+# pyproject.toml
+dependencies = [
+    "livekit-agents>=1.5",
+    "livekit-plugins-silero",
+    "livekit-plugins-deepgram",   # or livekit-plugins-whisper
+    "livekit-plugins-openai",     # or livekit-plugins-ollama
+    "livekit-plugins-cartesia",   # or livekit-plugins-edge-tts
+    "fastapi>=0.115",
+    "structlog>=24",
+    "qdrant-client>=1.12",
+    "sentence-transformers>=3",
+    "mem0>=0.1",
+    "pydantic-settings>=2",
+]
+```
 
-**1.3 Frontend Scaffolding**
+**1.3 Docker Compose Services (Dev)**
+```yaml
+services:
+  livekit-server:
+    image: livekit/livekit-server:latest
+    command: --config /etc/livekit.yaml
+    ports: ["7880:7880", "7881:7881"]
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    ports: ["6333:6333"]
+    volumes: ["qdrant_data:/qdrant/storage"]
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+
+  postgres:
+    image: postgres:16-alpine
+    ports: ["5432:5432"]
+    environment:
+      POSTGRES_DB: advisor
+    volumes: ["pg_data:/var/lib/postgresql/data"]
+
+  agent:
+    build: ./backend
+    command: python -m advisor.agent.main
+    environment:
+      LIVEKIT_URL: ws://livekit-server:7880
+      LIVEKIT_API_KEY: devkey
+      LIVEKIT_API_SECRET: secret
+      REDIS_URL: redis://redis:6379
+    depends_on: [livekit-server, qdrant, redis, postgres]
+    volumes:
+      - ./backend/src:/app/src
+```
+
+**1.4 Agent Scaffold (connects but does nothing yet)**
+```python
+# advisor/agent/main.py
+from livekit.agents import AgentServer
+
+server = AgentServer()
+
+@server.on("connect")
+async def on_connect(ctx):
+    # Phase 2-5 will fill this in
+    await ctx.wait_for_close()
+
+if __name__ == "__main__":
+    server.run()
+```
+
+**1.5 Frontend Scaffold**
 - React 18 + TypeScript + Vite
-- TailwindCSS + shadcn/ui for components
-- WebSocket client utility
-- API client (axios/fetch wrapper)
-- Auth placeholder (JWT)
-- Docker multi-stage build
+- LiveKit RoomConnect for WebRTC (replaces raw WebSocket)
+- shadcn/ui for components
+- TailwindCSS
 
-**1.4 Infrastructure**
-- Docker Compose: backend, frontend, Qdrant (vector DB), Redis (cache/queue)
-- GitHub Actions: lint → test → build on PR, deploy on main
-- `.env.example` with all required vars documented
-- Docker health checks + restart policies
+```tsx
+// App.tsx — ~20 lines to connect to LiveKit room
+import { RoomConnect } from "@livekit/components-react";
 
-**1.5 Shared Foundation**
-- `BaseService` abstract class with lifecycle hooks
-- Unified error types (domain-specific exceptions)
-- Async-first everywhere (`asyncio`, `asyncpg`, `httpx`)
-- Telemetry stubs (OpenTelemetry ready, Prometheus metrics endpoint)
+function App() {
+  return (
+    <RoomConnect
+      serverUrl={import.meta.env.VITE_LIVEKIT_URL}
+      token={token}
+    >
+      {/* Agent handles everything else */}
+    </RoomConnect>
+  );
+}
+```
 
 ### Deliverables
-- [ ] Monorepo with all scaffolding
-- [ ] `make install && make test && make lint` passes
-- [ ] `docker compose up` starts backend + frontend + infra
-- [ ] `GET /health` returns `{"status": "ok"}`
-- [ ] Frontend renders blank page with routing
+- [ ] `docker compose up` starts all 5 services
+- [ ] Agent connects to LiveKit Server (check logs)
+- [ ] Frontend connects to LiveKit room
+- [ ] `make lint && make test` passes
 - [ ] CI green on PR
 
 ---
 
-## Phase 2 — Text-to-Speech (TTS)
+## Phase 2 — Text-to-Speech (Configure via LiveKit)
 
-**Goal:** A production-grade TTS service that converts text to speech with low latency, multiple voice options, caching, and streaming. This is the first real feature — simpler than STT, good to validate the audio pipeline.
+**Goal:** Agent speaks. Zero custom TTS code — just a LiveKit plugin config change.
 
 ### Tasks
 
-**2.1 TTS Engine Abstraction**
+**2.1 Choose TTS Provider**
+| Provider | Quality | Latency | Cost | Local? |
+|----------|:-------:|:-------:|:----:|:------:|
+| Edge TTS (plugin) | 8/10 | ~500ms | Free | No (hits MS servers) |
+| Cartesia Sonic | 9/10 | ~200ms | $0.03/min | No |
+| ElevenLabs | 9.5/10 | ~300ms | $5/mo+ | No |
+| Pipper | 6/10 | ~50ms | Free | Yes (CPU) |
+
+**2.2 Wire TTS Plugin**
+```python
+# Adding TTS = ONE config change
+session = AgentSession(
+    tts=cartesia.TTS(
+        model="sonic-2-english",
+        voice="6f6a6c6c-6b6a-4e6f-8e6a-6c6c6b6a4e6f",  # Indian English voice
+    ),
+    # ... rest of config
+)
 ```
-TTSProvider (interface)
-├── EdgeTTSProvider     # Free, 100+ voices, internet needed
-├── CoquiTTSProvider    # Local, voice cloning, XTTSv2
-└── ElevenLabsProvider  # Paid, best quality, streaming
-```
-- Strategy pattern: primary + fallback providers
-- Auto-fallback on failure (e.g., EdgeTTS → Coqui → ElevenLabs)
-- Voice configuration per use case (soothing for elderly, professional for wealth mgmt)
 
-**2.2 Edge TTS Integration**
-- `edge-tts` Python library
-- Supported voices: English (US/UK/IN), Hindi, Hinglish
-- SSML support for prosody (speed, pitch control)
-- Audio format: 16-bit PCM WAV (interchange format), convert to MP3/Opus for streaming
+**2.3 Voice Configuration**
+- English (India) — default
+- Hindi — secondary (upcoming)
+- Hinglish — fallback
+- Speed control: 1.0x default, 0.85x for elderly users
+- SSML for emphasis: slower on disclaimers, faster on greetings
 
-**2.3 Streaming TTS API**
-- `POST /tts` — request text + voice config → returns audio file
-- `GET /tts/stream` — WebSocket or SSE for chunked playback
-  - Client sends `{"text": "...", "voice": "..."}`
-  - Server streams audio chunks as they're generated
-  - First audio chunk in < 500ms
-- `GET /tts/voices` — list available voices
-
-**2.4 Caching**
-- Redis cache: `sha256(text + voice)` → audio bytes
-- TTL: 24h for common responses, 0h for dynamic content
-- Cache hit rate monitoring (prometheus metric)
-
-**2.5 Production Concerns**
-- Audio normalization (volume leveling)
-- Rate limiting (100 req/min per user)
-- Request validation (max 2000 chars, profanity filter)
-- Metrics: TTS latency (p50/p95/p99), cache hit rate, error rate
-- Logging: every TTS request logged with duration, cache status
-
-**2.6 Testing**
-- Unit: each provider with mocked HTTP
-- Integration: Edge TTS actually generates audio
-- Property: audio output is valid WAV/MP3
-- Load: 50 concurrent requests
+**2.4 Testing**
+- `curl` the token endpoint, open frontend, hear agent speak a test phrase
+- Latency < 500ms first chunk
+- Fallback: if Cartesia fails → Edge TTS
 
 ### Deliverables
-- [ ] `curl localhost:8000/tts -d '{"text":"Hello"}'` returns audio file
-- [ ] WebSocket streaming works (< 500ms to first chunk)
-- [ ] Fallback provider kicks in if primary fails
-- [ ] Redis cache avoids repeated API calls
-- [ ] All metrics exposed on `/metrics`
+- [ ] Agent speaks when user joins the room
+- [ ] Voice is Indian English
+- [ ] Disclaimers are spoken clearly (slower speed)
+- [ ] TTS failure → auto fallback
 
 ---
 
-## Phase 3 — Speech-to-Text (STT)
+## Phase 3 — Speech-to-Text (Configure via LiveKit)
 
-**Goal:** Real-time speech transcription with voice activity detection, language detection, and confidence scoring. The agent can now hear and understand.
+**Goal:** Agent hears and understands. Zero custom STT code — LiveKit plugin.
 
 ### Tasks
 
-**3.1 Voice Activity Detection (VAD)**
-- Silero VAD model (PyTorch, runs on CPU/MPS)
-- Process microphone audio in 30ms chunks
-- State machine: SILENCE → SPEAKING → SILENCE
-  - `min_speech_duration_ms`: 500ms (ignore clicks/coughs)
-  - `min_silence_duration_ms`: 600ms (end of utterance)
-  - `threshold`: 0.5 (sensitivity)
-- Echo cancellation preprocessing via WebRTC AEC
+**3.1 Choose STT Provider**
+| Provider | Model | Accuracy | Latency | Local? |
+|----------|-------|:--------:|:-------:|:------:|
+| Whisper (livekit-plugins-whisper) | large-v3 | 95% | ~1-2s | Yes (MPS) |
+| Deepgram (livekit-plugins-deepgram) | Nova-3 | 97% | ~300ms | No |
+| AssemblyAI | Best | 96% | ~500ms | No |
 
-**3.2 Audio Capture**
-- PyAudio for local microphone
-- WebSocket-based streaming from frontend browser
-- Sample rate: 16kHz (Whisper native format)
-- Format: 16-bit PCM mono
-- Ring buffer for real-time processing without drops
+**3.2 Wire STT Plugin**
+```python
+session = AgentSession(
+    stt=deepgram.STT(model="nova-3"),  # or whisper.STT(model="large-v3")
+    # ...
+)
+```
 
-**3.3 Whisper STT Service**
-- `faster-whisper` with large-v3 model
-- Quantization: `int8_float16` on MPS (Apple Silicon)
-- Two modes:
-  - **Realtime:** Process when VAD detects speech end (higher latency, perfect)
-  - **Streaming:** Process every 2s of audio (lower latency, slightly worse)
-- Language detection per utterance (auto-detect English/Hindi/Hinglish)
-- Confidence threshold: discard transcriptions below 0.6 confidence
-- Hotword/phrase boosting for finance terms (SIP, PPF, NPS, ELSS, CIBIL)
+**3.3 VAD (Voice Activity Detection)**
+Already included — Silero VAD via LiveKit:
+```python
+session = AgentSession(
+    vad=silero.VAD(
+        threshold=0.5,
+        min_speech_duration_ms=500,
+        min_silence_duration_ms=600,
+    ),
+)
+```
 
-**3.4 STT API**
-- `WS /stt/stream` — WebSocket: client streams raw audio, server returns transcripts
-  ```
-  Client → Server: [binary audio chunk, 16kHz PCM]
-  Server → Client: {"text": "I want to invest in mutual funds", "confidence": 0.92, "is_final": true, "language": "en"}
-  ```
-- `POST /stt/transcribe` — one-shot file transcription (for recorded meetings)
-- `GET /stt/status` — model loaded status, language, uptime
-
-**3.5 Production Concerns**
-- Background noise reduction via `noisereduce` library
-- Silence trimming before sending to Whisper (speed up, reduce cost)
-- Transcription timeout (if user talks > 30s, force finalize)
-- Metrics: STT latency, word error rate, VAD false positive rate
-- Graceful model reload (handle OOM)
-
-**3.6 Testing**
-- Unit: VAD state machine transitions
-- Integration: pre-recorded audio files with known transcripts
-- Performance: measure real-time factor (< 0.5x real-time on M-series)
-- Accuracy: WER on finance-specific test set
+**3.4 Language Support**
+- English (auto-detect)
+- Hindi (auto-detect)
+- Hinglish — Whisper handles code-switching naturally
+- Hotword boosting: SIP, PPF, NPS, ELSS, CIBIL, KYC
 
 ### Deliverables
-- [ ] WebSocket STT: speak → transcribed text appears in < 2s
-- [ ] VAD correctly segments speech from silence
-- [ ] Works with Hindi, Hinglish, English
-- [ ] Confidence < 0.6 transcripts are discarded
-- [ ] `/metrics` shows STT latency histogram
+- [ ] Speak → agent transcribes correctly
+- [ ] VAD segments speech without clipping
+- [ ] Hinglish sentences transcribe correctly
+- [ ] Finance terms (SIP, PPF) recognized reliably
 
 ---
 
-## Phase 4 — LLM Orchestration & RAG
+## Phase 4 — Finance RAG Pipeline
 
-**Goal:** The agent's brain. A finance-knowledgeable LLM that answers accurately using a RAG pipeline with retrieved documents, conversation context, and compliance guardrails.
+**Goal:** The brain. Knowledge ingestion, vector search, hybrid retrieval, and LLM integration.
 
 ### Tasks
 
-**4.1 LLM Abstraction**
-```
-LLMProvider (interface)
-├── OllamaProvider      # Local Llama 3.1 8B, free
-├── OpenAIMockProver    # GPT-4o-mini, API-based
-└── MockProvider        # For testing
-```
-- Provider selection via config (local dev → Ollama, prod → API)
-- Structured output via `instructor` library (typed JSON responses)
-- Token tracking per request (cost monitoring)
-- Retry with exponential backoff
+**4.1 Knowledge Ingestion**
+- Scrape RBI/SEBI/IRDAI/PFRDA PDFs → `data/knowledge/`
+- PyMuPDF for PDF extraction
+- Chunk: 500 chars, 50 overlap (RecursiveCharacterTextSplitter)
+- Embed: BAAI/bge-small-en-v1.5 (384d)
+- Store in Qdrant with metadata (source, section, year, product)
 
-**4.2 Prompt Engineering**
-- System prompt template per use case:
-  - `personal_finance`: "You are a personal finance advisor..."
-  - `loan_advisory`: "You are a loan specialist..."
-  - `insurance`: "You are an insurance advisor..."
-- Dynamic injection: conversation history, retrieved docs, emotion context
-- Compliance footer appended to every response:
-  ```
-  [DISCLAIMER: This is for educational purposes only. 
-  Consult a SEBI-registered advisor for personalized advice.]
-  ```
-
-**4.3 RAG Pipeline**
-```
-Document Ingestion:
-  PDFs/MDs → Chunk (500t, 50t overlap) → Embed → Store in Qdrant
-
-Retrieval:
-  User Query → Embed → Hybrid Search (dense + sparse) → Rerank → Top-5 chunks
-
-Generation:
-  System Prompt + Context Chunks + History → LLM → Response with citations
+**4.2 Qdrant Collection Schema**
+```python
+{
+    "collection": "finance_knowledge",
+    "vectors": {"size": 384, "distance": "Cosine"},
+    "sparse_vectors": {"bm25": {}},  # For hybrid search
+    "payload_schema": {
+        "source": "keyword",
+        "section": "keyword",
+        "year": "integer",
+        "regulator": "keyword",
+        "product_type": "keyword",
+    }
+}
 ```
 
-**4.4 Data Ingestion Pipeline**
-- Batch pipeline (`python -m advisor.ingest`) that:
-  - Reads PDFs from `data/knowledge/`
-  - Extracts text (PyMuPDF for PDFs, markdown for .md)
-  - Chunks with `RecursiveCharacterTextSplitter` (500 chars, 50 overlap)
-  - Generates embeddings via `BAAI/bge-small-en-v1.5` (384d)
-  - Stores in Qdrant with metadata (source, section, page)
-- Incremental updates (re-embed only changed files)
-- Versioned snapshots for rollback
+**4.3 Hybrid Search**
+```python
+# Dense + Sparse fusion
+results = client.search_batch([
+    SearchRequest(
+        vector=query_embedding,           # Dense
+        limit=20,
+    ),
+    SearchRequest(
+        vector=sparse_embedding,          # Sparse (BM25)
+        limit=20,
+    ),
+])
+reranked = cross_encoder(query, merge(results))
+```
 
-**4.5 Hybrid Search**
-- Dense: embedding similarity (cosine)
-- Sparse: BM25 via `Qdrant` sparse vectors
-- Fusion: `alpha * dense_score + (1-alpha) * sparse_score`
-- Reranking: cross-encoder (`BAAI/bge-reranker-v2-m3`) on top-20 results
-- Finance-specific boost: prioritize RBI/SEBI docs over generic web content
+**4.4 Document Types to Ingest**
+| Regulator | Docs |
+|-----------|------|
+| RBI | Master Circulars (Savings, FD, KYC, UPI, NRI), Interest rate notifications |
+| SEBI | Mutual fund regulations, Investment advisor rules, Disclosure norms |
+| IRDAI | Insurance product guidelines, Claim settlement rules |
+| Income Tax | 80C, 80D, 80TTA, Capital gains, TDS rules |
+| PFRDA | NPS guidelines, Withdrawal rules |
+| Bank Products | Savings, FD, RD, Credit Card, Home Loan, Personal Loan terms |
+| Investopedia | Educational finance articles (benchmarking) |
 
-**4.6 Conversation Memory**
-- Short-term: last 10 turns in prompt context
-- Long-term: Mem0 or custom vector store
-  - Summarize conversations nightly
-  - Extract user profile (risk tolerance, goals, products mentioned)
-  - Store in Qdrant with user_id for retrieval
-- Session persistence: every turn saved to PostgreSQL (audit trail)
+**4.5 LLM Integration**
+```python
+session = AgentSession(
+    llm=openai.LLM(model="gpt-4o-mini"),  # Or Ollama for local
+    # ...
+)
 
-**4.7 Compliance & Safety**
-- Blocklist: cannot recommend specific stocks, cannot predict returns
-- PII redaction: PAN, Aadhaar, bank account numbers masked in logs
-- Audit logging: every Q&A pair stored with timestamp, user_id, emotion context
-- Response validation: regex checks for guarantees/promises
-- Human escalation: confidence < 0.4 → "Let me connect you to an advisor"
+agent = Agent(
+    instructions=PERSONAL_FINANCE_PROMPT,
+    tools=[lookup_finance_knowledge, calculate_emi, ...],
+)
+```
 
-**4.8 API**
-- `POST /chat` — query + optional context → response
-  ```json
-  {
-    "query": "Should I invest in PPF?",
-    "user_id": "u_123",
-    "session_id": "s_456",
-    "use_case": "personal_finance",
-    "emotion": "curious"
-  }
-  ```
-  Response:
-  ```json
-  {
-    "response": "PPF offers 7.1% interest...",
-    "citations": ["RBI Master Circular 2024 §4.2"],
-    "confidence": 0.89,
-    "disclaimer": true
-  }
-  ```
-- `POST /chat/stream` — SSE streaming of token-by-token response
-- `POST /ingest` — trigger document re-indexing
-
-**4.9 Testing**
-- Unit: RAG retrieval relevance, chunking correctness
-- Integration: end-to-end QA on a curated 50-question finance test set
-- Accuracy: manually annotated answers, track correct %, hallucination %
-- Adversarial: prompt injection attempts, jailbreak attempts
+**4.6 Prompt Engineering**
+- System prompt defines finance advisor persona (see agent-plan.md)
+- RAG results injected as context before user query
+- Compliance footer appended to every response
+- Use case detection: first query routes to banking/loan/insurance/etc prompt
 
 ### Deliverables
-- [ ] `POST /chat` answers finance questions with citations
-- [ ] RAG pipeline retrieves relevant docs for test queries
-- [ ] Conversation memory persists across turns
-- [ ] Compliance guardrails prevent banned responses
-- [ ] Metrics: retrieval precision@5, response accuracy, latency
+- [ ] Ingestion pipeline processes 50+ finance docs
+- [ ] `lookup_finance_knowledge("PPF rate")` returns relevant chunks
+- [ ] LLM answers with citations
+- [ ] Hybrid search beats pure vector search (measure precision@5)
 
 ---
 
-## Phase 5 — Conversation Loop Integration
+## Phase 5 — Agent & Conversation Loop
 
-**Goal:** Wire TTS + STT + LLM into a real-time conversational loop. The agent can now have a full voice conversation.
+**Goal:** Full voice conversation with finance knowledge, tools, memory, and compliance.
 
 ### Tasks
 
-**5.1 Orchestrator Service**
-- Asynchronous pipeline manager:
-  ```
-  Mic Audio → VAD → STT → [Fusion: text + emotion + context] → LLM + RAG → TTS → Speaker
-  ```
-- State machine for conversation flow:
-  - `LISTENING` — VAD active, collecting audio
-  - `PROCESSING` — STT + LLM running
-  - `SPEAKING` — TTS playing, VAD paused (to avoid hearing itself)
-  - `INTERRUPTED` — user cuts in, stop TTS, re-enter LISTENING
+**5.1 Agent Implementation**
+```python
+# advisor/agent/main.py — complete agent
+@server.on("connect")
+async def on_connect(ctx):
+    session = AgentSession(
+        vad=silero.VAD(),
+        stt=deepgram.STT(model="nova-3"),
+        llm=openai.LLM(model="gpt-4o-mini"),
+        tts=cartesia.TTS(model="sonic-2-english", voice="indian"),
+    )
 
-**5.2 Interruption Handling**
-- While TTS is speaking, continue running VAD
-- If user speaks with confidence > 0.7:
-  - Stop current TTS playback
-  - Log "User interrupted: {partial_stt}"
-  - Enter LISTENING mode
-- Barge-in timeout: resume from where interrupted if pause > 2s
+    agent = Agent(
+        instructions=PROMPTS["personal_finance"],
+        tools=[
+            lookup_finance_knowledge,
+            calculate_emi,
+            get_product_info,
+            assess_risk_profile,
+            escalate_to_human,
+        ],
+    )
 
-**5.3 WebSocket Session API**
-- `WS /session` — full-duplex session
-  ```
-  Client → Server: [binary audio chunks]
-  Server → Client: {"type": "transcript", "text": "..."}
-  Server → Client: {"type": "response", "text": "..."}
-  Server → Client: {"type": "audio", "data": "<base64>"}
-  Server → Client: {"type": "state", "state": "listening|processing|speaking"}
-  Server → Client: {"type": "emotion", "emotion": "confused"}
-  ```
+    await session.start(agent=agent, room=ctx.room)
+    await ctx.wait_for_close()
+```
 
-**5.4 Session Management**
-- Session lifecycle: create → active → pause → resume → end
-- Rate limiting: per-session (max 100 messages/min)
-- Timeout: auto-end after 5min of silence
-- Persistence: full session log to PostgreSQL (audit compliance)
+**5.2 Memory Integration**
+```python
+# Before each LLM call, load user memory
+@session.on("before_llm")
+async def on_before_llm(ctx):
+    profile = await mem0.get(f"profile:{ctx.session.user_id}")
+    ctx.system_prompt += f"""
+User profile:
+- Risk profile: {profile.risk_profile}
+- Goals: {profile.goals}
+- Mentioned products: {profile.mentioned_products}
+"""
 
-**5.5 Testing**
-- E2E: pre-recorded conversation plays through full pipeline
-- Latency budget: full turn < 3s (VAD + STT + LLM + RAG + TTS)
-- Interruption: mid-TTS interruption resumes correctly
-- Stress: 10 concurrent sessions
+# After each turn, save to memory
+@session.on("after_llm")
+async def on_after_llm(ctx):
+    await mem0.remember(ctx.session.user_id, {
+        "query": ctx.user_message,
+        "response": ctx.llm_response,
+        "emotion": vision_context.emotion,
+        "timestamp": time.now(),
+    })
+```
+
+**5.3 Compliance Layer**
+```python
+@session.on("before_tts")
+async def on_before_tts(ctx):
+    response = ctx.llm_response
+
+    # Check: no stock tips, no guarantees
+    if compliance.has_violation(response):
+        ctx.llm_response = compliance.sanitize(response)
+
+    # Ensure disclaimer present
+    if "SEBI-registered" not in response:
+        ctx.llm_response += DISCLAIMER
+```
+
+**5.4 Use Case Detection**
+```python
+# On first user message, detect use case
+@session.on("first_user_message")
+async def on_first_message(ctx):
+    use_case = classifier.predict(ctx.user_message)
+    ctx.agent.instructions = PROMPTS[use_case]
+```
+
+**5.5 Human Escalation**
+```python
+@agent_tool
+async def escalate_to_human(ctx, reason: str):
+    """Transfer to human advisor."""
+    ticket = create_ticket(ctx.session, reason)
+    ctx.session.say("Connecting you to a human advisor...")
+    await ctx.session.transfer_to_human(ticket.id)
+```
+
+**5.6 Session Audit Logging**
+- Every turn logged to PostgreSQL: `(user_id, session_id, query, response, emotion, latency_ms)`
+- Used for compliance audits and quality monitoring
 
 ### Deliverables
-- [ ] Full conversation loop works end-to-end
-- [ ] Interruption handling (user can cut off the bot)
-- [ ] Session persists and can be resumed
-- [ ] End-to-end latency < 3s per turn
+- [ ] End-to-end conversation: speak → hear response
+- [ ] Barge-in works (interrupt mid-response)
+- [ ] Memory persists across sessions
+- [ ] Compliance blocks banned responses
+- [ ] Audit logs in PostgreSQL
+- [ ] Human escalation works
 
 ---
 
-## Phase 6 — Camera Integration
+## Phase 6 — Camera & Video Pipeline
 
-**Goal:** Access webcam, stream frames to backend, detect faces, and establish the vision pipeline. No analysis yet — just getting frames from camera to server efficiently.
+**Goal:** Webcam streams via LiveKit video tracks. Face detection with MediaPipe.
 
 ### Tasks
 
-**6.1 Camera Access (Frontend)**
-- `getUserMedia` API for webcam access
-- Frame capture at configurable FPS (default: 10, max: 30)
-- Canvas-based frame extraction → JPEG base64 or binary blob
-- WebSocket stream: `WS /vision/stream`
-  ```
-  Client → Server: [binary JPEG frame, ~50KB each]
-  ```
-- Bandwidth optimization:
-  - 10 FPS initially, adapt based on network
-  - JPEG quality 70 (good enough for face detection)
-  - Skip frames if WebSocket buffer is full
+**6.1 Frontend: Webcam via LiveKit**
+```tsx
+// LiveKit handles WebRTC video track automatically
+import { useLocalParticipant } from "@livekit/components-react";
 
-**6.2 Frame Processing Pipeline (Backend)**
-- WebSocket receives frames → async queue → processor
-- Frame rate limiting: max 10 FPS processed (drop excess)
-- Resolution: 640x480 (balance speed vs accuracy)
-- Frame metadata: timestamp, frame_id, resolution
+function VideoRoom() {
+  const { cameraTrack } = useLocalParticipant();
+
+  return (
+    <div>
+      <video ref={cameraTrack} />
+    </div>
+  );
+}
+```
+
+No custom WebSocket or frame capture code. LiveKit video tracks handle everything.
+
+**6.2 Backend: Video Track Processing**
+```python
+# LiveKit delivers video frames to the agent
+@session.on("video_track")
+async def on_video_frame(ctx, frame: VideoFrame):
+    """Process each frame from the user's webcam."""
+    await vision_pipeline.process_frame(frame)
+```
 
 **6.3 Face Detection**
-- MediaPipe Face Detection (BlazeFace) — ultra-fast, works on CPU
-- Returns: bounding box, 6 keypoints (eyes, ears, nose, mouth)
-- Confidence > 0.5 to consider a valid face
-- Track multiple faces (future: multi-party meetings)
+```python
+class VisionPipeline:
+    def __init__(self):
+        self.face_detection = mp.solutions.face_detection.FaceDetection(
+            model_selection=1,  # distance model
+            min_detection_confidence=0.5,
+        )
 
-**6.4 API**
-- `WS /vision/stream` — receive frames, return detections
-  ```
-  Server → Client: {
-    "type": "face_detection",
-    "faces": [{"bbox": [x,y,w,h], "confidence": 0.95, "landmarks": [...]}],
-    "frame_id": 42,
-    "timestamp": 1712345678.123
-  }
-  ```
-- `GET /vision/status` — camera connected, FPS, frame count
+    async def process_frame(self, frame: VideoFrame):
+        rgb = frame.to_rgb()
+        results = self.face_detection.process(rgb)
+        if not results.detections:
+            return None
 
-**6.5 Production Concerns**
-- Privacy: frames processed in memory, never written to disk
+        # Track face presence, bounding box
+        self.face_present = True
+        self.bbox = results.detections[0].bounding_box
+```
+
+**6.4 Privacy**
+- Frames processed in memory, never written to disk
 - No recording without explicit consent
-- `/metrics`: frames processed, FPS, face detection latency
-- Backpressure: if backend can't keep up, frontend drops frames
-- Graceful degradation: no camera → text-only mode
-
-**6.6 Testing**
-- Unit: frame preprocessing, face detection on sample images
-- Integration: real webcam feed with known faces
-- Performance: max sustainable FPS on M-series Mac
+- User sees camera preview (transparency)
+- Device selection: front camera for self-view
 
 ### Deliverables
-- [ ] Frontend captures webcam → streams to backend
-- [ ] Backend detects faces with MediaPipe
-- [ ] Face bounding boxes display on frontend overlay
+- [ ] Webcam streams to LiveKit room
+- [ ] Backend receives video frames
+- [ ] Face detection works (bounding box)
 - [ ] Privacy: no frames persisted
-- [ ] Metrics: processing FPS, face detection rate
 
 ---
 
-## Phase 7 — Computer Vision & Emotion Analysis
+## Phase 7 — CV & Emotion Analysis
 
-**Goal:** Full multimodal understanding — facial expressions, emotions, gaze, head pose, gestures. The agent now sees and interprets the user's state.
+**Goal:** Full multimodal understanding — emotion, gaze, head pose, gestures. Feed into LLM.
 
 ### Tasks
 
 **7.1 Face Mesh**
-- MediaPipe Face Mesh (468 landmarks, 3D)
-- Iris landmarks for gaze direction
-- Model selection:
-  - `max_num_faces`: 1 (single user focus)
-  - `refine_landmarks`: True (enables iris tracking)
-  - `min_detection_confidence`: 0.5
+```python
+self.face_mesh = mp.solutions.face_mesh.FaceMesh(
+    max_num_faces=1,
+    refine_landmarks=True,  # iris tracking enabled
+)
+```
 
-**7.2 Emotion Recognition**
-- DeepFace with `VGG-Face` model (fastest, 7 emotions)
-- Every N=15 frames (skip for performance)
-- Emotion smoothing over sliding window of 5 frames
-- Mapped emotions for agent responses:
-  | Detected | Agent Action |
-  |----------|-------------|
-  | Confused | "Would you like me to explain differently?" |
-  | Frustrated | "I understand this can be confusing..." |
-  | Happy/Agreeing | Continue, note positive reaction |
-  | Surprised | "Does that sound good to you?" |
-  | Fearful/Anxious | Reassure, simplify language |
-  | Sad | Empathetic tone, slower speech |
-  | Angry | Apologetic, offer human escalation |
+**7.2 Emotion Recognition (EmotiEffLib)**
+```python
+self.emotion = EmotiEffLib()  # 1-2ms, vs DeepFace 200-500ms
+
+async def process_frame(self, frame):
+    if frame.timestamp % 15 != 0:
+        return  # Every 15th frame only
+
+    emotion = self.emotion.predict(frame.to_rgb())
+    self.ctx.emotion = emotion.label
+    self.ctx.emotion_confidence = emotion.confidence
+
+    # Smooth over sliding window
+    self.emotion_history.append(emotion)
+    if len(self.emotion_history) > 5:
+        self.emotion_history.pop(0)
+```
 
 **7.3 Gaze Estimation**
-- From iris landmarks: left/right/center relative to camera
-- States: LOOKING_AT_CAMERA, LOOKING_AWAY, LOOKING_DOWN (reading?)
-- If user looks away > 5s → "Are you still there?" or pause
-- If user looks down repeatedly → checking documents, wait patiently
+```python
+def estimate_gaze(landmarks) -> str:
+    # Iris landmarks 468-473
+    left_iris = landmarks[468]
+    right_iris = landmarks[473]
 
-**7.4 Head Pose & Gestures**
-- SolvePnP from face landmarks to get head rotation (yaw, pitch, roll)
-- Nod detection: yaw/0.5s → "User nodded" (agreement signal)
-- Head shake: pitch oscillation → "User disagreed"
-- Hand gesture (future): MediaPipe Hands for "stop" or "raise hand"
-- Lean tracking: face bounding box size change → leaning in/out
+    # Compare iris to eye corners
+    if both_eyes_centered(left_iris, right_iris, landmarks):
+        return "looking_at_camera"
+    elif both_eyes_left(left_iris, right_iris):
+        return "looking_away"
+    else:
+        return "looking_down"
+```
 
-**7.5 Multimodal Fusion**
-- Combine vision signals into a structured context:
-  ```python
-  class VisionContext(BaseModel):
-      emotion: str  # "confused" | "happy" | "neutral" | ...
-      emotion_confidence: float
-      gaze: str  # "looking_at_camera" | "looking_away"
-      head_gesture: str  # "nodding" | "shaking" | "still"
-      engagement_score: float  # 0.0 - 1.0
-      confusion_score: float  # 0.0 - 1.0
-  ```
-- Inject into LLM prompt:
-  ```
-  System: The user appears CONFUSED (engagement: 0.4). 
-  Adjust your response — simplify, ask clarifying questions.
-  ```
-- Store vision context in session history (for later analysis)
+**7.4 Head Pose (Nod/Shake)**
+```python
+def detect_head_gesture(pose_history: deque) -> str:
+    if len(pose_history) < 10:
+        return "still"
 
-**7.6 Performance Optimization**
-- Run vision processing on a separate async task (non-blocking to audio/LLM)
-- Frame skipping: detect face every frame, emotion every 15 frames, gaze every 5
-- MPS acceleration for PyTorch models (DeepFace)
-- If FPS drops below 5, reduce resolution to 320x240
+    yaws = [p.yaw for p in pose_history]
+    pitches = [p.pitch for p in pose_history]
 
-**7.7 API**
-- `WS /vision/stream` — updated to return:
-  ```json
-  {
-    "type": "vision_context",
-    "emotion": "confused",
-    "gaze": "looking_at_camera",
-    "head_gesture": "still",
-    "engagement": 0.6,
-    "confusion": 0.8,
-    "frame_id": 142
-  }
-  ```
+    if max(pitches) - min(pitches) > 0.3:  # rapid up-down
+        return "nodding"
+    elif max(yaws) - min(yaws) > 0.3:      # rapid left-right
+        return "shaking"
+    else:
+        return "still"
+```
 
-**7.8 Privacy & Compliance**
-- **No raw frames stored or logged** — only feature vectors (emotion scores, gaze direction, head pose)
-- Session logs contain: timestamps + vision_context (feature vectors only)
+**7.5 Multimodal Fusion into LLM**
+```python
+@session.on("before_llm")
+async def inject_vision_context(ctx):
+    vision = vision_pipeline.current_context
+
+    ctx.system_prompt += f"""
+## Live User Context
+- Emotion: {vision.emotion} ({vision.emotion_confidence:.0%})
+- Gaze: {vision.gaze}
+- Gesture: {vision.head_gesture}
+- Engagement: {vision.engagement_score:.0%}
+
+Adjust your response accordingly:
+- If confused: simplify, offer alternative explanation
+- If frustrated: acknowledge, stay patient
+- If looking away > 5s: they may be checking documents, wait
+- If nodding: they agree, continue
+- If shaking head: they disagree, re-explain
+"""
+```
+
+**7.6 Performance Budget**
+| Operation | Frequency | Budget | Model |
+|-----------|-----------|--------|-------|
+| Face detection | Every frame | < 5ms | MediaPipe |
+| Face mesh | Every frame | < 10ms | MediaPipe |
+| Emotion | Every 15 frames (2Hz) | < 50ms | EmotiEffLib |
+| Gaze | Every 5 frames (6Hz) | < 5ms | Geometric |
+| Head pose | Every 3 frames (10Hz) | < 3ms | SolvePnP |
+
+**7.7 Privacy**
+- No raw frames stored or logged
+- Only feature vectors persisted: `(emotion, confidence, gaze, gesture, timestamp)`
 - User consent dialog before camera access
-- Optional: on-device processing for all face data
-
-**7.9 Testing**
-- Unit: emotion classifier on labeled face dataset
-- Integration: real webcam with acted expressions (sad, happy, confused)
-- Accuracy: > 70% on test set (realistic target for emotion)
-- Performance: vision pipeline < 50ms per frame
 
 ### Deliverables
-- [ ] Emotion detection: 7 emotions, smoothed, injected into conversation
+- [ ] 7 emotions detected with smoothing
 - [ ] Gaze tracking: looking at camera vs away
-- [ ] Gesture detection: nod/shake
-- [ ] Engagement score fed into LLM prompt
-- [ ] Privacy: no raw frames persisted, only feature vectors
-- [ ] Full multimodal conversation: audio + video → enriched responses
+- [ ] Nod/shake detection
+- [ ] Vision context injected into LLM prompts
+- [ ] Vision pipeline < 50ms per frame
+- [ ] No raw frames persisted
 
 ---
 
-## Phase 8 — Production Hardening & Observability
+## Phase 8 — Production Hardening
 
-**Goal:** Ship-ready. Monitoring, alerting, performance tuning, security audit, documentation, deployment.
+**Goal:** Ship-ready. Observability, scaling, security, compliance, documentation.
 
 ### Tasks
 
-**8.1 Monitoring & Alerting**
-- Prometheus metrics on every endpoint
+**8.1 Monitoring**
+- Prometheus metrics from LiveKit Agent and our services
 - Grafana dashboards:
-  - Latency (VAD, STT, LLM, TTS, Vision) — p50/p95/p99
-  - Error rates per service
-  - Active sessions, queue depths
-  - RAG retrieval precision
-  - API usage per user
-- Alert rules: >5% error rate, latency >5s p99, model not loaded
+  - Turn latency (VAD → STT → LLM → TTS): p50/p95/p99
+  - Tool call frequency (which tools, how often)
+  - Emotion distribution over sessions
+  - RAG retrieval precision@5
+  - Active sessions, concurrent agents
+- Alerts: latency > 5s p99, error rate > 5%, model not loaded
 
 **8.2 Performance Tuning**
-- Profile with py-spy / cProfile
-- Optimize bottlenecks:
-  - LLM speculative decoding (reduce TTFT)
-  - STT model quantization (int8)
-  - Vision frame pipeline (asyncio batching)
-- Load testing: `locust` with 100 concurrent sessions
-- Memory profiling: watch for leaks in long sessions
+```python
+# Profile bottlenecks
+# - LLM speculative decoding for faster first token
+# - Whisper int8 quantization for faster STT
+# - Vision frame skipping when GPU > 80%
+# - RAG caching for frequent queries
+```
 
-**8.3 Security**
-- Rate limiting per IP, per user, per endpoint
-- API key authentication (Bearer tokens)
+**8.3 Scaling**
+```yaml
+# docker-compose.prod.yml
+services:
+  agent:
+    deploy:
+      replicas: 3  # Multiple agent instances
+    environment:
+      LIVEKIT_URL: wss://livekit.example.com
+```
+
+**8.4 Security**
+- JWT token authentication for room access
+- API rate limiting per token
 - Input sanitization (prompt injection protection)
-- CORS configuration for frontend origin
-- Secrets management (HashiCorp Vault or env vars)
-- Audit log: all requests with user_id, timestamp, action
+- Secrets via environment variables (not in code)
+- CORS for frontend origin only
 
-**8.4 Documentation**
-- API reference (OpenAPI/Swagger)
-- Architecture diagram (updated)
-- Runbook: how to start, debug, recover
-- On-call guide: common issues and solutions
-
-**8.5 Deployment Checklist**
-- Docker images pushed to registry (GHCR / Docker Hub)
-- docker-compose.prod.yml (no dev volumes, resource limits)
-- Database migrations (Alembic for PostgreSQL)
-- Backup strategy for Qdrant snapshots + PostgreSQL
-- Zero-downtime deployment (rolling update)
-- SSL termination (Caddy / nginx)
+**8.5 Security Audit**
+| Check | Tool |
+|-------|------|
+| Docker vuln scan | Trivy |
+| Deps check | `pip audit` |
+| Secret scanning | GitLeaks |
+| SAST | Ruff + mypy (strict) |
 
 **8.6 Compliance Finalization**
-- Consent flow for camera + audio
-- Data retention policy (delete logs > 90 days)
-- GDPR / DPDP Act compliance review
-- Vulnerability scan (Trivy on Docker images)
+- Consent dialog for camera + audio recording
+- Data retention policy: session logs deleted after 90 days
+- DPDP Act compliance: user data export/delete on request
+- Disclaimers on every response (audited quarterly)
+
+**8.7 Documentation**
+- API reference (OpenAPI)
+- Architecture diagram (updated)
+- Runbook: start → debug → scale → recover
+- On-call guide
 
 ### Deliverables
 - [ ] Grafana dashboards for all services
-- [ ] Load test passes 100 concurrent sessions
-- [ ] Security scan passes
-- [ ] API docs published
-- [ ] Deployment runbook written
-- [ ] All compliance requirements met
+- [ ] Load test: 50 concurrent sessions
+- [ ] Security vulnerabilities = 0
+- [ ] Docs published
+- [ ] Compliance requirements met
 
 ---
 
 ## Summary Timeline
 
-| Phase | What | Estimated Effort |
-|-------|------|-----------------|
-| 1 | Foundation & Setup | 3-4 days |
-| 2 | TTS | 3-4 days |
-| 3 | STT | 5-7 days |
-| 4 | LLM + RAG | 7-10 days |
-| 5 | Conversation Loop | 4-5 days |
-| 6 | Camera Integration | 3-4 days |
+| Phase | What | Effort |
+|-------|------|--------|
+| 1 | Foundation + LiveKit Setup | 3-4 days |
+| 2 | TTS (LiveKit plugin config) | 1 day |
+| 3 | STT (LiveKit plugin config) | 1 day |
+| 4 | Finance RAG Pipeline | 7-10 days |
+| 5 | Agent + Conversation Loop | 4-5 days |
+| 6 | Camera + Video Pipeline | 3-4 days |
 | 7 | CV & Emotion Analysis | 7-10 days |
 | 8 | Production Hardening | 5-7 days |
-| **Total** | | **~6-8 weeks** |
+| **Total** | | **~5-7 weeks** |
+
+**Saved vs original plan:** ~2 weeks saved because Phase 2 (TTS), Phase 3 (STT), and half of Phase 5 (conversation loop) went from custom-build to configuration-only.
