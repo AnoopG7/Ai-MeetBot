@@ -5,19 +5,20 @@ import asyncio
 from livekit.agents import AgentServer, JobContext
 
 from ..core.logging import configure_logging, get_logger
+from .prewarm import prewarm
 from .session import run_agent
 
 logger = get_logger(__name__)
 
 server = AgentServer()
+server.setup_fnc = prewarm
 
 
 @server.rtc_session()
 async def entrypoint(ctx: JobContext) -> None:
     """Entrypoint for LiveKit job assignment.
 
-    Phase 2: TTS configured — agent speaks welcome message.
-    Phase 5+: full conversational loop with STT, LLM, and tools.
+    Phase 3: Full speech pipeline — VAD + STT + LLM + TTS.
     """
     try:
         await run_agent(ctx)
