@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import datetime
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from livekit.api import AccessToken, VideoGrants
 from pydantic import BaseModel
 
 from ...core.config import settings
 from ...core.logging import get_logger
+from ...core.models import User
+from ..routes.auth import get_current_user
 
 logger = get_logger(__name__)
 
@@ -15,7 +17,6 @@ router = APIRouter(prefix="/api/livekit", tags=["livekit"])
 
 
 class TokenRequest(BaseModel):
-    identity: str | None = None
     room: str = "finance-advisor"
 
 
@@ -26,8 +27,11 @@ class TokenResponse(BaseModel):
 
 
 @router.post("/token")
-async def create_token(req: TokenRequest) -> TokenResponse:
-    identity = req.identity or f"user-{settings.app_version}"
+async def create_token(
+    req: TokenRequest,
+    user: User = Depends(get_current_user),
+) -> TokenResponse:
+    identity = user.id
 
     if not settings.livekit_api_key or not settings.livekit_api_secret:
         raise HTTPException(status_code=500, detail="LiveKit credentials not configured")

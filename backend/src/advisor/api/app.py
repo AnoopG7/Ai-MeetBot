@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from ..core.config import settings
 from ..core.logging import configure_logging, get_logger
-from .routes import health, token
+from .routes import auth, health, token
 
 logger = get_logger(__name__)
 
@@ -17,6 +17,13 @@ logger = get_logger(__name__)
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     configure_logging()
     logger.info("starting up", app=settings.app_name, version=settings.app_version)
+    try:
+        from ..core.database import init_db
+
+        await init_db()
+        logger.info("database tables synced")
+    except Exception:
+        logger.warning("database not available — continuing without DB")
     yield
     logger.info("shutting down")
 
@@ -35,8 +42,9 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    app.include_router(health.router, prefix="", tags=["health"])
-    app.include_router(token.router, prefix="", tags=["livekit"])
+    app.include_router(health.router)
+    app.include_router(token.router)
+    app.include_router(auth.router)
 
     return app
 

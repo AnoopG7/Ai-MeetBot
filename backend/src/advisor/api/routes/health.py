@@ -2,15 +2,12 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from ...core.config import settings
+from ...core.logging import get_logger
 
-router = APIRouter()
+logger = get_logger(__name__)
+router = APIRouter(tags=["health"])
 
 
 @router.get("/health")
-async def health_check() -> dict[str, str]:
-    return {
-        "status": "ok",
-        "app": settings.app_name,
-        "version": settings.app_version,
-    }
+async def health() -> dict[str, str]:
+    return {"status": "ok"}
