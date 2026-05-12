@@ -5,6 +5,7 @@ import asyncio
 from livekit.agents import AgentServer, JobContext
 
 from ..core.logging import configure_logging, get_logger
+from .session import run_agent
 
 logger = get_logger(__name__)
 
@@ -13,20 +14,19 @@ server = AgentServer()
 
 @server.rtc_session()
 async def entrypoint(ctx: JobContext) -> None:
-    """Called when a job is assigned (user connects to the LiveKit room).
+    """Entrypoint for LiveKit job assignment.
 
-    Phase 1: connects, logs, stays alive until room closes.
-    Phase 5+: full conversational loop with AgentSession.
+    Phase 2: TTS configured — agent speaks welcome message.
+    Phase 5+: full conversational loop with STT, LLM, and tools.
     """
-    participant = await ctx.wait_for_participant()
-    logger.info(
-        "agent session started",
-        room=ctx.room.name,
-        participant=participant.identity,
-    )
-
-    # Block until cancelled by the framework when the job ends
-    await asyncio.Event().wait()
+    try:
+        await run_agent(ctx)
+    except asyncio.CancelledError:
+        logger.info("agent session cancelled")
+        raise
+    except Exception:
+        logger.exception("agent session failed")
+        raise
 
 
 def run() -> None:

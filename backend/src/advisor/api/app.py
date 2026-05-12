@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from ..core.config import settings
 from ..core.logging import configure_logging, get_logger
-from .routes import health
+from .routes import health, token
 
 logger = get_logger(__name__)
 
@@ -37,6 +37,7 @@ def create_app() -> FastAPI:
     )
 
     app.include_router(health.router, prefix="", tags=["health"])
+    app.include_router(token.router, prefix="", tags=["livekit"])
 
     return app
 

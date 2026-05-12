@@ -20,8 +20,9 @@ class Settings(BaseSettings):
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "DEBUG"
 
     livekit_url: str = "ws://localhost:7880"
+    livekit_public_url: str = "ws://localhost:7880"
     livekit_api_key: str = "devkey"
-    livekit_api_secret: str = "secret"
+    livekit_api_secret: str = "this-is-a-minimum-32-char-development-secret!!"
 
     redis_url: str = "redis://localhost:6379"
 
