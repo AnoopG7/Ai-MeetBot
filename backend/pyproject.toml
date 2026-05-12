@@ -1,0 +1,53 @@
+[project]
+name = "finance-advisor"
+version = "0.1.0"
+description = "Personal Finance Advisor AI Agent"
+requires-python = ">=3.12, <3.13"
+dependencies = [
+    "livekit-agents>=1.5",
+    "livekit-plugins-silero>=0.6",
+    "livekit-plugins-deepgram>=0.6",
+    "livekit-plugins-openai>=0.6",
+    "livekit-plugins-cartesia>=0.6",
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "pydantic>=2.10",
+    "pydantic-settings>=2.7",
+    "structlog>=24.4",
+    "httpx>=0.28",
+    "redis>=5.2",
+    "qdrant-client>=1.12",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.24",
+    "pytest-cov>=6",
+    "ruff>=0.8",
+    "mypy>=1.13",
+    "pre-commit>=4",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP", "B", "SIM"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.mypy]
+strict = true
+python_version = "3.12"
+disallow_untyped_defs = true
+ignore_missing_imports = true
+exclude = ["tests/"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+pythonpath = ["src"]

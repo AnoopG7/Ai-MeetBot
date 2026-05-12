@@ -1,0 +1,61 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+wheels/
+*.whl
+
+# Virtual env
+.venv/
+venv/
+env/
+.conda/
+
+# Testing
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage/
+htmlcov/
+*.coverage.*
+
+# Models (downloaded on demand)
+models/
+!models/.gitkeep
+
+# Vector store
+chroma_db/
+qdrant_storage/
+data/chroma_db/
+
+# Media
+data/sessions/
+data/recordings/
+temp/
+*.wav
+*.mp3
+*.mp4
+
+# Config
+.env
+.env.local
+*.local.yaml
+*.local.yml
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
