@@ -103,6 +103,7 @@ services:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/advisor
     volumes:
       - ./backend/src:/app/src
+      - ./backend/data:/app/data
     depends_on:
       livekit-server:
         condition: service_started

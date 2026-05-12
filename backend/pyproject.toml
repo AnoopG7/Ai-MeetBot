@@ -17,7 +17,9 @@ dependencies = [
     "httpx>=0.28",
     "redis>=5.2",
     "qdrant-client>=1.12",
+    "fastembed>=0.5",
 ]
+
 
 [project.optional-dependencies]
 dev = [

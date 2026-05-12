@@ -1,4 +1,4 @@
-.PHONY: install test lint typecheck fmt dev-api dev-agent dev-frontend docker-up docker-down docker-logs docker-build clean help
+.PHONY: install test lint typecheck fmt dev-api dev-agent dev-frontend docker-up docker-down docker-logs docker-build ingest clean help
 
 # ── Backend ──────────────────────────────────────────────
 
@@ -50,6 +50,14 @@ db-migrate:
 db-revision:
 	cd backend && PYTHONPATH=src uv run alembic revision --autogenerate -m "$(message)"
 
+# ── RAG Ingestion ───────────────────────────────────────
+
+ingest:
+	cd backend && PYTHONPATH=src uv run python -m advisor.rag.ingest
+
+ingest-recreate:
+	cd backend && PYTHONPATH=src uv run python -m advisor.rag.ingest --recreate
+
 # ── Cleanup ─────────────────────────────────────────────
 
 clean:
@@ -76,6 +84,8 @@ help:
 	@echo "  make docker-down     Stop all services"
 	@echo "  make docker-logs     Tail docker logs"
 	@echo "  make docker-build    Rebuild Docker images"
+	@echo "  make ingest          Ingest knowledge base into Qdrant"
+	@echo "  make ingest-recreate Recreate collection and re-ingest"
 	@echo "  make db-migrate      Run database migrations"
 	@echo "  make db-revision     Create new migration revision"
 	@echo "  make clean           Remove caches and build artifacts"

@@ -30,9 +30,6 @@ class Settings(BaseSettings):
 
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/advisor"
 
-    embedding_model: str = "BAAI/bge-small-en-v1.5"
-    embedding_dim: int = 384
-
     llm_provider: Literal["openai", "ollama"] = "openai"
     openai_api_key: str = ""
     openai_model: str = "gpt-4o-mini"
@@ -48,6 +45,16 @@ class Settings(BaseSettings):
 
     api_host: str = "0.0.0.0"
     api_port: int = 8000
+
+    embedding_model: str = "BAAI/bge-small-en-v1.5"
+    embedding_dim: int = 384
+    embedding_provider: Literal["fastembed", "openai"] = "fastembed"
+
+    chunk_size: int = 500
+    chunk_overlap: int = 50
+
+    rag_top_k: int = 5
+    rag_hybrid_alpha: float = 0.5
 
     project_root: Path = Path(__file__).resolve().parent.parent.parent.parent
     knowledge_dir: Path = project_root / "data" / "knowledge"

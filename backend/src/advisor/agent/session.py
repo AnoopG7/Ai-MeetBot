@@ -4,12 +4,24 @@ import asyncio
 from typing import Any
 
 from livekit.agents import Agent, AgentSession, JobContext
+from livekit.agents.llm import function_tool
 from livekit.plugins import cartesia, deepgram, openai
 
 from ..core.config import settings
 from ..core.logging import get_logger
+from ..rag.retriever import FinanceRetriever
 
 logger = get_logger(__name__)
+
+_retriever: FinanceRetriever | None = None
+
+
+def get_retriever() -> FinanceRetriever:
+    global _retriever
+    if _retriever is None:
+        _retriever = FinanceRetriever()
+    return _retriever
+
 
 WELCOME_MESSAGE = (
     "Hello! I'm your personal finance advisor. "
@@ -39,6 +51,23 @@ _FINANCE_KEYWORDS = [
     ("PAN", 1.5),
     ("Aadhaar", 1.5),
 ]
+
+
+@function_tool
+async def lookup_finance_knowledge(query: str) -> str:
+    """Search the financial knowledge base for relevant information about
+    Indian financial products, tax rules, investment options, regulations,
+    and personal finance concepts. Use this whenever the user asks about
+    specific financial topics, products, or rules."""
+    try:
+        retriever = get_retriever()
+        context = await asyncio.to_thread(retriever.retrieve_formatted, query)
+        if not context:
+            return "No relevant information found in the knowledge base."
+        return context
+    except Exception:
+        logger.exception("knowledge lookup failed", query=query[:80])
+        return "I encountered an error while searching my knowledge base. Please try again."
 
 
 def create_stt() -> deepgram.STT:
@@ -113,15 +142,20 @@ def create_session(
 def create_agent() -> Agent:
     return Agent(
         instructions=(
-            "You are a helpful and knowledgeable personal finance advisor for Indian users. "
+            "You are a knowledgeable personal finance advisor for Indian users. "
             "You provide clear, accurate, and responsible financial guidance.\n\n"
             "Guidelines:\n"
             "- Always respond in clear English (Indian English preferred).\n"
             "- Never give stock tips or guaranteed returns.\n"
             "- Always include a disclaimer about consulting a SEBI-registered advisor.\n"
             "- Be friendly, patient, and educational.\n"
-            "- Avoid jargon unless you explain it."
+            "- Avoid jargon unless you explain it.\n"
+            "- Use the lookup_finance_knowledge tool to get accurate, up-to-date "
+            "information about financial products, tax rules, and regulations.\n"
+            "- When citing information from lookup_finance_knowledge, mention "
+            "the source in your response."
         ),
+        tools=[lookup_finance_knowledge],
     )
 
 
