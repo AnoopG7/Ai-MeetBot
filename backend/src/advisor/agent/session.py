@@ -59,10 +59,11 @@ _BASE_INSTRUCTIONS = (
     "for personalized advice.\n"
     "- Be friendly, patient, and educational.\n"
     "- Avoid jargon unless you explain it.\n"
-    "- Use the lookup_finance_knowledge tool to get accurate, up-to-date "
-    "information about financial products, tax rules, and regulations.\n"
-    "- When citing information from lookup_finance_knowledge, mention "
-    "the source in your response.\n"
+    "- When the user asks about financial products, tax rules, or regulations, "
+     "use lookup_finance_knowledge to get accurate information. "
+     "Call the tool ONCE per distinct query, not repeatedly.\n"
+     "- When citing information from lookup_finance_knowledge, mention "
+     "the source in your response.\n"
     "- Use calculate_emi for loan EMI queries.\n"
     "- Use calculate_sip_returns for investment return projections.\n"
     "- Use assess_risk_profile to help users understand their risk tolerance.\n"
@@ -178,12 +179,18 @@ async def _build_instructions(participant: str) -> str:
 
 def create_tts(*, voice_id: str | None = None) -> EdgeTTS | cartesia.TTS:
     if settings.tts_provider == "edge-tts":
-        logger.info("using EdgeTTS (free, no API key needed)")
+        logger.info(
+            "using EdgeTTS (free, no API key needed). "
+            "Requires ffmpeg to be installed — see logs for installation instructions if not available."
+        )
         return EdgeTTS(voice=voice_id) if voice_id else EdgeTTS()
 
     api_key = settings.cartesia_api_key
     if not api_key:
-        logger.error("CARTESIA_API_KEY not set — falling back to EdgeTTS (free)")
+        logger.warning(
+            "CARTESIA_API_KEY not set — falling back to EdgeTTS. "
+            "Requires ffmpeg. Consider setting CARTESIA_API_KEY or TTS_PROVIDER=edge-tts"
+        )
         return EdgeTTS()
 
     return cartesia.TTS(
@@ -290,10 +297,6 @@ async def run_agent(ctx: JobContext) -> None:
         close_event.set()
 
     await session.start(agent=agent, room=ctx.room)
-
-    session.say(WELCOME_MESSAGE)
-    session.say(_DISCLAIMER, allow_interruptions=False)
-
     await close_event.wait()
 
     logger.info(

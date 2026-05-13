@@ -44,7 +44,7 @@ class Settings(BaseSettings):
     stt_provider: Literal["deepgram", "whisper", "faster-whisper"] = "faster-whisper"
     deepgram_api_key: str = ""
 
-    tts_provider: Literal["cartesia", "edge-tts", "elevenlabs"] = "cartesia"
+    tts_provider: Literal["cartesia", "edge-tts", "elevenlabs"] = "edge-tts"
     cartesia_api_key: str = ""
     cartesia_voice_id: str = "6f6a6c6c-6b6a-4e6f-8e6a-6c6c6b6a4e6f"
 

@@ -17,6 +17,7 @@ ENV PYTHONPATH=/app/src \
     PYTHONUNBUFFERED=1
 
 COPY --from=builder /app/.venv .venv
+RUN .venv/bin/python -c "from faster_whisper import WhisperModel; WhisperModel('base', device='cpu', compute_type='int8')"
 COPY src/ src/
 COPY data/ data/
 
