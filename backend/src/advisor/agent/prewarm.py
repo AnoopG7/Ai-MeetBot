@@ -17,7 +17,7 @@ def prewarm(proc: JobProcess) -> None:
     logger.info("prewarming Silero VAD model")
     vad = silero.VAD.load(
         min_speech_duration=0.05,
-        min_silence_duration=0.55,
+        min_silence_duration=1.2,
         prefix_padding_duration=0.5,
         activation_threshold=0.5,
     )

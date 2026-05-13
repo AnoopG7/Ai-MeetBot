@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from typing import Any
 
 from livekit.agents import Agent, AgentSession, JobContext
@@ -15,6 +16,7 @@ from ..memory import (
     upsert_user_memory,
 )
 from ..vision.state import state_store as visual_state_store
+from ..vision.processor import VisualMetadata
 from .tools import FINANCE_TOOLS
 from .tts_edge import EdgeTTS
 from .stt_faster_whisper import FasterWhisperSTT
@@ -71,6 +73,14 @@ _BASE_INSTRUCTIONS = (
      "- Use escalate_to_human when the user explicitly asks for a human advisor.\n"
      "- Use get_visual_context to check user engagement, gaze, and head pose. "
      "Call this when the user seems distracted or when you need to adapt your response.\n\n"
+    "Visual Awareness:\n"
+    "You receive periodic visual context updates describing the user's visible state. "
+    "Use this information to adapt your tone and delivery naturally:\n"
+    "  - If the user is smiling or nodding, acknowledge their positive reaction.\n"
+    "  - If the user looks confused or disengaged, simplify or ask clarifying questions.\n"
+    "  - If the user is looking away repeatedly, pause and re-engage.\n"
+    "  - If the user's mouth is open, they may be about to speak — give them space.\n"
+    "  - Use visible reactions to gauge understanding like an in-person advisor would.\n\n"
     "Use case detection - Identify the user's primary need:\n"
     "- Investments / Mutual Funds / SIP\n"
     "- Tax Planning / ITR / Deductions\n"
@@ -240,6 +250,35 @@ async def create_agent(participant: str | None = None) -> Agent:
     )
 
 
+def _summarize_visual_state(meta: VisualMetadata) -> str:
+    parts = []
+
+    if meta.gaze == "at_camera":
+        parts.append("facing camera")
+    elif meta.gaze == "away":
+        parts.append(f"looking away ({meta.looking_away_sec:.0f}s)")
+    else:
+        parts.append("looking to the side")
+
+    if meta.engagement > 0.7:
+        parts.append("highly engaged")
+    elif meta.engagement > 0.4:
+        parts.append("moderately engaged")
+    else:
+        parts.append("low engagement")
+
+    if meta.smiling:
+        parts.append("smiling")
+    if meta.mouth_open:
+        parts.append("mouth open")
+    if meta.nod_count > 0:
+        parts.append("nodding")
+    if meta.eye_count < 2:
+        parts.append("eyes partially obscured")
+
+    return " | ".join(parts)
+
+
 async def run_agent(ctx: JobContext) -> None:
     participant = await ctx.wait_for_participant()
     user_id = participant.identity
@@ -302,29 +341,47 @@ async def run_agent(ctx: JobContext) -> None:
     await session.start(agent=agent, room=ctx.room)
 
     async def _visual_monitor() -> None:
-        last_alert: str | None = None
+        last_summary: str | None = None
+        last_critical: float = 0.0
         while not close_event.is_set():
-            await asyncio.sleep(5)
+            await asyncio.sleep(10)
             try:
                 meta = visual_state_store.get(user_id)
                 if meta is None or not meta.face_detected:
-                    visual_state_store.store_note(user_id, None)
-                    visual_state_store.store_note("latest", None)
+                    last_summary = None
                     continue
-                alert: str | None = None
-                if meta.looking_away_sec > 5:
-                    alert = f"User looking away for {meta.looking_away_sec:.0f}s (engagement {meta.engagement:.2f})"
-                elif meta.engagement < 0.3:
-                    alert = f"Low user engagement ({meta.engagement:.2f}) — user may be distracted"
-                if alert and alert != last_alert:
-                    logger.info("visual context: %s", alert)
-                    visual_state_store.store_note(user_id, alert)
-                    visual_state_store.store_note("latest", alert)
-                    last_alert = alert
-                elif not alert:
-                    visual_state_store.store_note(user_id, None)
-                    visual_state_store.store_note("latest", None)
-                    last_alert = None
+
+                summary = _summarize_visual_state(meta)
+                visual_state_store.store_note(user_id, summary)
+                visual_state_store.store_note("latest", summary)
+
+                if summary != last_summary:
+                    last_summary = summary
+                    try:
+                        ctx = session._pipeline.chat_ctx
+                        ctx.append(role="system", text=f"[Visual: {summary}]")
+                        logger.debug("injected visual context: %s", summary)
+                    except Exception:
+                        pass
+
+                now = time.time()
+                if now - last_critical > 30:
+                    trigger = False
+                    if meta.looking_away_sec > 8 and not meta.smiling:
+                        trigger = True
+                    elif meta.engagement < 0.25 and meta.face_detected:
+                        trigger = True
+                    if trigger:
+                        last_critical = now
+                        try:
+                            ctx = session._pipeline.chat_ctx
+                            ctx.append(
+                                role="system",
+                                text="[Visual: User appears disengaged or distracted. "
+                                     "Consider re-engaging them if appropriate.]"
+                            )
+                        except Exception:
+                            pass
             except Exception:
                 logger.exception("visual monitor error")
 

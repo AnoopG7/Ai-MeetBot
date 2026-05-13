@@ -5,7 +5,7 @@ import {
   useRoomContext,
   useLocalParticipant,
 } from '@livekit/components-react'
-import type { RemoteAudioTrack } from 'livekit-client'
+import { RoomEvent, type RemoteAudioTrack, type Participant } from 'livekit-client'
 import { theme } from './theme'
 import { useChat } from './hooks/useChat'
 import { useTranscriptions } from './hooks/useTranscriptions'
@@ -14,6 +14,7 @@ import { ChatList } from './components/ChatList'
 import { VoiceControls } from './components/VoiceControls'
 import { AuthPage } from './components/AuthPage'
 import type { UserProfile } from './components/AuthPage'
+import type { AgentState } from './components/AgentAvatar'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 const DEFAULT_ROOM = 'finance-advisor'
@@ -34,7 +35,9 @@ function RoomView() {
   const [micBusy, setMicBusy] = useState(false)
   const [muted, setMuted] = useState(false)
   const mutedRef = useRef(false)
-  const subCountRef = useRef(0)
+  const [layoutMode, setLayoutMode] = useState<'videocall' | 'chat'>('videocall')
+  const [agentState, setAgentState] = useState<AgentState>('idle')
+  const agentStateRef = useRef<AgentState>('idle')
 
   const applyMute = useCallback((m: boolean) => {
     mutedRef.current = m
@@ -50,17 +53,52 @@ function RoomView() {
 
   useEffect(() => {
     applyMute(muted)
-    const onTrackSubscribed = (track: any) => {
-      subCountRef.current++
-      console.log(`trackSubscribed #${subCountRef.current}: kind=${track.kind} source=${track.source}`)
-      applyMute(mutedRef.current)
-    }
+    const onTrackSubscribed = () => { applyMute(mutedRef.current) }
     room.on('trackSubscribed', onTrackSubscribed)
     return () => { room.off('trackSubscribed', onTrackSubscribed) }
   }, [muted, room, applyMute])
 
+  useEffect(() => {
+    let thinkingTimer: ReturnType<typeof setTimeout>
+    const onActiveSpeakers = (speakers: Participant[]) => {
+      const localSpeaking = speakers.find(p => p.isLocal)
+      const remoteSpeaking = speakers.find(p => !p.isLocal)
+      if (localSpeaking) {
+        clearTimeout(thinkingTimer)
+        setAgentState('listening')
+        agentStateRef.current = 'listening'
+      } else if (remoteSpeaking) {
+        clearTimeout(thinkingTimer)
+        setAgentState('speaking')
+        agentStateRef.current = 'speaking'
+      } else {
+        if (agentStateRef.current === 'listening') {
+          setAgentState('thinking')
+          agentStateRef.current = 'thinking'
+          thinkingTimer = setTimeout(() => {
+            setAgentState((s) => {
+              agentStateRef.current = s === 'thinking' ? 'idle' : s
+              return agentStateRef.current
+            })
+          }, 2000)
+        } else if (agentStateRef.current === 'speaking') {
+          setAgentState('thinking')
+          agentStateRef.current = 'thinking'
+          thinkingTimer = setTimeout(() => {
+            setAgentState((s) => {
+              agentStateRef.current = s === 'thinking' ? 'idle' : s
+              return agentStateRef.current
+            })
+          }, 1500)
+        }
+      }
+    }
+    room.on(RoomEvent.ActiveSpeakersChanged, onActiveSpeakers)
+    return () => { room.off(RoomEvent.ActiveSpeakersChanged, onActiveSpeakers); clearTimeout(thinkingTimer) }
+  }, [room])
+
   function cleanToolCall(text: string): string {
-    return text.replace(/<function=\w+>.*?<\/function>/g, '').trim()
+    return text.replace(/<function=[\s\S]*?<\/function>/g, '').trim()
   }
 
   useTranscriptions(room, (evt) => {
@@ -93,24 +131,35 @@ function RoomView() {
     await sendText(msg)
   }, [input, busy, sendText])
 
-  return (
+  const isVideocall = layoutMode === 'videocall'
+
+  const header = (
     <div style={{
-      height: '100vh', display: 'flex', flexDirection: 'column',
-      background: theme.bg, color: theme.text,
+      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      padding: '0 20px', height: 52,
+      borderBottom: `1px solid ${theme.border}`,
+      flexShrink: 0,
     }}>
-      <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '0 20px', height: 52,
-        borderBottom: `1px solid ${theme.border}`,
-        flexShrink: 0,
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{
-            width: 8, height: 8, borderRadius: '50%',
-            background: theme.green, boxShadow: `0 0 6px ${theme.green}`,
-          }} />
-          <span style={{ fontWeight: 600, fontSize: 15 }}>Finance Advisor</span>
-        </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div style={{
+          width: 8, height: 8, borderRadius: '50%',
+          background: theme.green, boxShadow: `0 0 6px ${theme.green}`,
+        }} />
+        <span style={{ fontWeight: 600, fontSize: 15 }}>Finance Advisor</span>
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <button
+          onClick={() => setLayoutMode(isVideocall ? 'chat' : 'videocall')}
+          title={isVideocall ? 'Switch to chat view' : 'Switch to video call view'}
+          style={{
+            padding: '6px 12px', borderRadius: 8, fontSize: 12, fontWeight: 500,
+            border: `1px solid ${theme.border}`, background: 'transparent',
+            color: theme.textDim, cursor: 'pointer',
+          }}
+        >
+          {isVideocall ? '☰ Chat' : '📹 Call'}
+        </button>
         <button
           onClick={() => setMuted(!muted)}
           title={muted ? 'Unmute' : 'Mute'}
@@ -124,11 +173,77 @@ function RoomView() {
           {muted ? '🔇' : '🔊'}
         </button>
       </div>
+    </div>
+  )
 
+  if (isVideocall) {
+    return (
+      <div style={{
+        height: '100vh', display: 'flex', flexDirection: 'column',
+        background: theme.bg, color: theme.text,
+      }}>
+        {header}
+        <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
+          <CameraView
+            participant={localParticipant?.identity}
+            mode="videocall"
+            agentState={agentState}
+            micOn={micOn}
+            micBusy={micBusy}
+            onToggleMic={toggleMic}
+          />
+          <div style={{
+            width: 380, flexShrink: 0, display: 'flex', flexDirection: 'column',
+            borderLeft: `1px solid ${theme.border}`,
+          }}>
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+              <ChatList messages={messages} busy={busy} />
+            </div>
+            <div style={{
+              display: 'flex', gap: 8, padding: '12px 16px',
+              borderTop: `1px solid ${theme.border}`,
+              flexShrink: 0,
+            }}>
+              <input
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() } }}
+                placeholder="Ask about finance..."
+                disabled={busy}
+                style={{
+                  flex: 1, padding: '10px 14px', fontSize: 14, borderRadius: 10,
+                  border: `1px solid ${theme.border}`, background: theme.surface,
+                  color: theme.text, outline: 'none',
+                }}
+              />
+              <button
+                onClick={handleSend}
+                disabled={busy || !input.trim()}
+                style={{
+                  padding: '10px 20px', fontSize: 14, fontWeight: 500,
+                  borderRadius: 10, border: 'none',
+                  background: busy || !input.trim() ? theme.surface2 : theme.accent,
+                  color: '#fff', cursor: busy || !input.trim() ? 'not-allowed' : 'pointer',
+                }}
+              >
+                Send
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div style={{
+      height: '100vh', display: 'flex', flexDirection: 'column',
+      background: theme.bg, color: theme.text,
+    }}>
+      {header}
       <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
           <ChatList messages={messages} busy={busy} />
-
           <div style={{
             display: 'flex', gap: 8, padding: '12px 16px',
             borderTop: `1px solid ${theme.border}`,
@@ -159,14 +274,13 @@ function RoomView() {
             </button>
           </div>
         </div>
-
         <VoiceControls
           micOn={micOn}
           micBlocked={micBlocked}
           micBusy={micBusy}
           onToggleMic={toggleMic}
         />
-        <CameraView participant={localParticipant?.identity} />
+        <CameraView participant={localParticipant?.identity} mode="sidebar" agentState={agentState} />
       </div>
     </div>
   )
