@@ -52,6 +52,13 @@ function RoomView() {
   }, [room])
 
   useEffect(() => {
+    if (localParticipant) {
+      // Always ensure mic is OFF on mount - user must click button to enable
+      localParticipant.setMicrophoneEnabled(false).catch(() => {})
+    }
+  }, [localParticipant])
+
+  useEffect(() => {
     applyMute(muted)
     const onTrackSubscribed = () => { applyMute(mutedRef.current) }
     room.on('trackSubscribed', onTrackSubscribed)
@@ -381,7 +388,7 @@ function App() {
         token={livekitToken}
         serverUrl={serverUrl}
         connect={true}
-        audio={false}
+        audio={{ autoGainControl: true, noiseSuppression: true, echoCancellation: true }}
         video={false}
         onError={() => {}}
         onDisconnected={() => { handleDisconnect() }}

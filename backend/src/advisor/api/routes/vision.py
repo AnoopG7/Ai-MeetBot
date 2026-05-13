@@ -37,8 +37,8 @@ async def vision_websocket(ws: WebSocket, participant: str = "unknown") -> None:
 
             meta = processor.process(frame)
 
-            state_store.update(participant, meta)
-            state_store.update("latest", meta)
+            await state_store.update(participant, meta)
+            await state_store.update("latest", meta)
 
             await ws.send_json({
                 "face_detected": meta.face_detected,

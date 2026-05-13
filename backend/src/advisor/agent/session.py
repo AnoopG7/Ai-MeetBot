@@ -296,6 +296,28 @@ async def run_agent(ctx: JobContext) -> None:
     close_event = asyncio.Event()
     last_user_query: str | None = None
 
+    @ctx.room.on("data_received")
+    def on_chat_data(data: bytes, participant: Any | None = None, kind: Any | None = None) -> None:
+        if participant and participant.identity == ctx.room.localParticipant.identity:
+            return
+        try:
+            text = data.decode("utf-8").strip()
+            if text:
+                asyncio.create_task(_inject_chat_message(session, user_id, text))
+        except Exception:
+            logger.exception("failed to process chat data")
+
+    async def _inject_chat_message(session: AgentSession, _user_id: str, text: str) -> None:
+        try:
+            await session.conversation.create_and_add_item(
+                type="message",
+                role="user",
+                text=text,
+            )
+            logger.info("injected chat message into conversation", text=text[:100])
+        except Exception:
+            logger.exception("failed to inject chat message")
+
     @session.on("conversation_item_added")
     def on_conversation_item(item: Any) -> None:
         nonlocal last_user_query
@@ -346,42 +368,17 @@ async def run_agent(ctx: JobContext) -> None:
         while not close_event.is_set():
             await asyncio.sleep(10)
             try:
-                meta = visual_state_store.get(user_id)
+                meta = await visual_state_store.get(user_id)
                 if meta is None or not meta.face_detected:
                     last_summary = None
                     continue
 
                 summary = _summarize_visual_state(meta)
-                visual_state_store.store_note(user_id, summary)
-                visual_state_store.store_note("latest", summary)
+                await visual_state_store.store_note(user_id, summary)
+                await visual_state_store.store_note("latest", summary)
 
-                if summary != last_summary:
-                    last_summary = summary
-                    try:
-                        ctx = session._pipeline.chat_ctx
-                        ctx.append(role="system", text=f"[Visual: {summary}]")
-                        logger.debug("injected visual context: %s", summary)
-                    except Exception:
-                        pass
-
-                now = time.time()
-                if now - last_critical > 30:
-                    trigger = False
-                    if meta.looking_away_sec > 8 and not meta.smiling:
-                        trigger = True
-                    elif meta.engagement < 0.25 and meta.face_detected:
-                        trigger = True
-                    if trigger:
-                        last_critical = now
-                        try:
-                            ctx = session._pipeline.chat_ctx
-                            ctx.append(
-                                role="system",
-                                text="[Visual: User appears disengaged or distracted. "
-                                     "Consider re-engaging them if appropriate.]"
-                            )
-                        except Exception:
-                            pass
+                last_summary = summary
+                logger.info("visual state: %s", summary)
             except Exception:
                 logger.exception("visual monitor error")
 

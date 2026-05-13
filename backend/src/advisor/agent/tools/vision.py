@@ -15,7 +15,7 @@ async def get_visual_context() -> str:
     and gestures. Call this periodically to stay aware of user engagement and
     adapt your tone accordingly."""
     try:
-        meta = state_store.get("latest")
+        meta = await state_store.get("latest")
         if meta is None:
             return "No visual data available — camera may be off."
 
@@ -41,8 +41,8 @@ async def get_visual_context() -> str:
         if meta.looking_away_sec > 3:
             lines.append(f"ALERT: User has been looking away for {meta.looking_away_sec:.0f} seconds.")
 
-        note = state_store.get_note("latest")
-        if note and note != meta.gaze and "looking away" not in note:
+        note = await state_store.get_note("latest")
+        if note:
             lines.append(f"Note: {note}")
 
         return " ".join(lines)

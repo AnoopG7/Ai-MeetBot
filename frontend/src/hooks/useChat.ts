@@ -1,6 +1,5 @@
 import { useState, useCallback, useRef } from 'react'
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+import { useRoomContext } from '@livekit/components-react'
 
 export interface ChatMessage {
   id: string
@@ -14,6 +13,7 @@ export interface ChatMessage {
 let nextId = 1
 
 export function useChat() {
+  const room = useRoomContext()
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [busy, setBusy] = useState(false)
   const busyRef = useRef(false)
@@ -43,24 +43,18 @@ export function useChat() {
     busyRef.current = true
     setBusy(true)
     try {
-      const r = await fetch(`${API_URL}/api/debug/chat`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: text.trim() }),
-      })
-      if (!r.ok) throw new Error(`HTTP ${r.status}`)
-      const d = await r.json()
-      addMessage('agent', d.response, true, 'text')
-      return d.response
-    } catch (e) {
-      const err = e instanceof Error ? e.message : 'Unknown error'
-      addMessage('agent', `Error: ${err}`, true, 'text')
+      const encoder = new TextEncoder()
+      await room.localParticipant.publishData(
+        encoder.encode(text.trim()),
+        { reliable: true, topic: 'chat' }
+      )
       return null
-    } finally {
+    } catch {
       busyRef.current = false
       setBusy(false)
+      return null
     }
-  }, [addMessage])
+  }, [addMessage, room])
 
   const clearMessages = useCallback(() => {
     setMessages([])
