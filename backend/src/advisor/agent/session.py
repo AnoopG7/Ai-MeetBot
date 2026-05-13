@@ -4,7 +4,7 @@ import asyncio
 from typing import Any
 
 from livekit.agents import Agent, AgentSession, JobContext
-from livekit.plugins import cartesia, deepgram, openai
+from livekit.plugins import deepgram, openai, cartesia
 
 from ..core.config import settings
 from ..core.logging import get_logger
@@ -15,6 +15,8 @@ from ..memory import (
     upsert_user_memory,
 )
 from .tools import FINANCE_TOOLS
+from .tts_edge import EdgeTTS
+from .stt_faster_whisper import FasterWhisperSTT
 
 logger = get_logger(__name__)
 
@@ -76,22 +78,37 @@ _BASE_INSTRUCTIONS = (
 )
 
 
-def create_stt() -> deepgram.STT:
-    api_key = settings.deepgram_api_key
-    if not api_key:
-        logger.warning("DEEPGRAM_API_KEY not set — STT will fail at runtime")
+def create_stt() -> deepgram.STT | openai.STT | FasterWhisperSTT | None:
+    if settings.stt_provider == "faster-whisper":
+        logger.info("using faster-whisper STT (local, free)")
+        return FasterWhisperSTT()
 
-    return deepgram.STT(
-        model="nova-3",
-        language="en-IN",
-        detect_language=False,
-        smart_format=True,
-        punctuate=True,
-        interim_results=True,
-        filler_words=True,
-        keywords=_FINANCE_KEYWORDS,
-        api_key=api_key,
-    )
+    if settings.stt_provider == "deepgram":
+        api_key = settings.deepgram_api_key
+        if api_key:
+            return deepgram.STT(
+                model="nova-3",
+                language="en-IN",
+                detect_language=False,
+                smart_format=True,
+                punctuate=True,
+                interim_results=True,
+                filler_words=True,
+                keywords=_FINANCE_KEYWORDS,
+                api_key=api_key,
+            )
+        logger.warning("DEEPGRAM_API_KEY not set — trying Groq Whisper fallback")
+
+    if settings.groq_api_key:
+        logger.info("using Groq Whisper STT (free tier)")
+        return openai.STT(
+            model="whisper-large-v3-turbo",
+            base_url=settings.groq_base_url,
+            api_key=settings.groq_api_key,
+        )
+
+    logger.error("no STT available — set DEEPGRAM_API_KEY or GROQ_API_KEY")
+    return None
 
 
 def create_llm() -> openai.LLM:
@@ -102,6 +119,15 @@ def create_llm() -> openai.LLM:
             model=settings.ollama_model,
             base_url=settings.ollama_base_url,
             api_key="ollama",
+        )
+
+    if settings.llm_provider == "groq":
+        if not settings.groq_api_key:
+            logger.warning("GROQ_API_KEY not set — LLM will fail at runtime")
+        return openai.LLM(
+            model=settings.groq_model,
+            base_url=settings.groq_base_url,
+            api_key=settings.groq_api_key,
         )
 
     api_key = settings.openai_api_key
@@ -150,28 +176,41 @@ async def _build_instructions(participant: str) -> str:
     return instructions
 
 
+def create_tts(*, voice_id: str | None = None) -> EdgeTTS | cartesia.TTS:
+    if settings.tts_provider == "edge-tts":
+        logger.info("using EdgeTTS (free, no API key needed)")
+        return EdgeTTS(voice=voice_id) if voice_id else EdgeTTS()
+
+    api_key = settings.cartesia_api_key
+    if not api_key:
+        logger.error("CARTESIA_API_KEY not set — falling back to EdgeTTS (free)")
+        return EdgeTTS()
+
+    return cartesia.TTS(
+        model="sonic-3",
+        voice=voice_id or settings.cartesia_voice_id,
+        speed=1.0,
+        api_key=api_key,
+    )
+
+
 def create_session(
     *,
     vad_model: Any | None = None,
     voice_id: str | None = None,
 ) -> AgentSession[Any]:
-    cartesia_key = settings.cartesia_api_key
-    if not cartesia_key:
-        logger.warning("CARTESIA_API_KEY not set — TTS will fail at runtime")
-
-    tts = cartesia.TTS(
-        model="sonic-3",
-        voice=voice_id or settings.cartesia_voice_id,
-        speed=1.0,
-        api_key=cartesia_key,
-    )
-
+    tts = create_tts(voice_id=voice_id)
     stt = create_stt()
 
-    kwargs: dict[str, Any] = dict(
-        tts=tts,
-        stt=stt,
-    )
+    kwargs: dict[str, Any] = {}
+
+    if tts is not None:
+        kwargs["tts"] = tts
+    else:
+        logger.error("no TTS available — agent will speak using text only")
+
+    if stt is not None:
+        kwargs["stt"] = stt
 
     if vad_model is not None:
         kwargs["vad"] = vad_model

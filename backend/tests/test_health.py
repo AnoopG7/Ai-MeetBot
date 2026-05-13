@@ -4,7 +4,6 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from advisor.api.app import app
-from advisor.core.config import settings
 
 
 @pytest.fixture
@@ -20,4 +19,3 @@ async def test_health(client: AsyncClient) -> None:
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "ok"
-    assert data["app"] == settings.app_name

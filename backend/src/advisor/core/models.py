@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import JSON, Column, DateTime, Index, Integer, String, Text, text
+from sqlalchemy import JSON, Column, DateTime, Index, Integer, String, Text, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -43,7 +43,7 @@ class SessionLog(Base):
     tools_used = Column(JSON, nullable=True)
     latency_ms = Column(Integer, nullable=True)
     created_at = Column(
-        DateTime(timezone=True), server_default=text("now()"), nullable=False
+        DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
     __table_args__ = (
