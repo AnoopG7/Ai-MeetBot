@@ -9,6 +9,7 @@ import type { RemoteAudioTrack } from 'livekit-client'
 import { theme } from './theme'
 import { useChat } from './hooks/useChat'
 import { useTranscriptions } from './hooks/useTranscriptions'
+import { CameraView } from './components/CameraView'
 import { ChatList } from './components/ChatList'
 import { VoiceControls } from './components/VoiceControls'
 import { AuthPage } from './components/AuthPage'
@@ -35,15 +36,6 @@ function RoomView() {
   const mutedRef = useRef(false)
   const subCountRef = useRef(0)
 
-  useEffect(() => {
-    const sub = (track: any) => {
-      subCountRef.current++
-      console.log(`trackSubscribed #${subCountRef.current}: kind=${track.kind} source=${track.source}`)
-    }
-    room.on('trackSubscribed', sub)
-    return () => { room.off('trackSubscribed', sub) }
-  }, [room])
-
   const applyMute = useCallback((m: boolean) => {
     mutedRef.current = m
     for (const [, p] of room.remoteParticipants) {
@@ -58,9 +50,13 @@ function RoomView() {
 
   useEffect(() => {
     applyMute(muted)
-    const sub = () => applyMute(mutedRef.current)
-    room.on('trackSubscribed', sub)
-    return () => { room.off('trackSubscribed', sub) }
+    const onTrackSubscribed = (track: any) => {
+      subCountRef.current++
+      console.log(`trackSubscribed #${subCountRef.current}: kind=${track.kind} source=${track.source}`)
+      applyMute(mutedRef.current)
+    }
+    room.on('trackSubscribed', onTrackSubscribed)
+    return () => { room.off('trackSubscribed', onTrackSubscribed) }
   }, [muted, room, applyMute])
 
   function cleanToolCall(text: string): string {
@@ -78,15 +74,13 @@ function RoomView() {
     setMicBusy(true)
     setMicBlocked(false)
     try {
-      if (micOn) {
-        await localParticipant.setMicrophoneEnabled(false)
-        setMicOn(false)
-      } else {
-        await localParticipant.setMicrophoneEnabled(true)
-        setMicOn(true)
-      }
-    } catch {
+      const newState = !micOn
+      await localParticipant.setMicrophoneEnabled(newState)
+      setMicOn(newState)
+    } catch (err) {
+      console.error('Mic toggle error:', err)
       setMicBlocked(true)
+      setMicOn(false)
     } finally {
       setMicBusy(false)
     }
@@ -172,6 +166,7 @@ function RoomView() {
           micBusy={micBusy}
           onToggleMic={toggleMic}
         />
+        <CameraView participant={localParticipant?.identity} />
       </div>
     </div>
   )
@@ -272,7 +267,7 @@ function App() {
         token={livekitToken}
         serverUrl={serverUrl}
         connect={true}
-        audio={true}
+        audio={false}
         video={false}
         onError={() => {}}
         onDisconnected={() => { handleDisconnect() }}

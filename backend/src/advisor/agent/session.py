@@ -14,6 +14,7 @@ from ..memory import (
     record_interaction,
     upsert_user_memory,
 )
+from ..vision.state import state_store as visual_state_store
 from .tools import FINANCE_TOOLS
 from .tts_edge import EdgeTTS
 from .stt_faster_whisper import FasterWhisperSTT
@@ -67,7 +68,9 @@ _BASE_INSTRUCTIONS = (
     "- Use calculate_emi for loan EMI queries.\n"
     "- Use calculate_sip_returns for investment return projections.\n"
     "- Use assess_risk_profile to help users understand their risk tolerance.\n"
-    "- Use escalate_to_human when the user explicitly asks for a human advisor.\n\n"
+     "- Use escalate_to_human when the user explicitly asks for a human advisor.\n"
+     "- Use get_visual_context to check user engagement, gaze, and head pose. "
+     "Call this when the user seems distracted or when you need to adapt your response.\n\n"
     "Use case detection - Identify the user's primary need:\n"
     "- Investments / Mutual Funds / SIP\n"
     "- Tax Planning / ITR / Deductions\n"
@@ -297,7 +300,37 @@ async def run_agent(ctx: JobContext) -> None:
         close_event.set()
 
     await session.start(agent=agent, room=ctx.room)
+
+    async def _visual_monitor() -> None:
+        last_alert: str | None = None
+        while not close_event.is_set():
+            await asyncio.sleep(5)
+            try:
+                meta = visual_state_store.get(user_id)
+                if meta is None or not meta.face_detected:
+                    visual_state_store.store_note(user_id, None)
+                    visual_state_store.store_note("latest", None)
+                    continue
+                alert: str | None = None
+                if meta.looking_away_sec > 5:
+                    alert = f"User looking away for {meta.looking_away_sec:.0f}s (engagement {meta.engagement:.2f})"
+                elif meta.engagement < 0.3:
+                    alert = f"Low user engagement ({meta.engagement:.2f}) — user may be distracted"
+                if alert and alert != last_alert:
+                    logger.info("visual context: %s", alert)
+                    visual_state_store.store_note(user_id, alert)
+                    visual_state_store.store_note("latest", alert)
+                    last_alert = alert
+                elif not alert:
+                    visual_state_store.store_note(user_id, None)
+                    visual_state_store.store_note("latest", None)
+                    last_alert = None
+            except Exception:
+                logger.exception("visual monitor error")
+
+    monitor_task = asyncio.create_task(_visual_monitor())
     await close_event.wait()
+    monitor_task.cancel()
 
     logger.info(
         "agent session ended",

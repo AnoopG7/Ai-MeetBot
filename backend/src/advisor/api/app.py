@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from ..core.config import settings
 from ..core.logging import configure_logging, get_logger
-from .routes import auth, chat_debug, health, token
+from .routes import auth, chat_debug, health, token, vision
 
 logger = get_logger(__name__)
 
@@ -46,6 +46,7 @@ def create_app() -> FastAPI:
     app.include_router(token.router)
     app.include_router(auth.router)
     app.include_router(chat_debug.router)
+    app.include_router(vision.router)
 
     return app
 

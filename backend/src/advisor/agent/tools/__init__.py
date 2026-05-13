@@ -5,6 +5,7 @@ from .finance import (
     escalate_to_human,
 )
 from .knowledge import lookup_finance_knowledge
+from .vision import get_visual_context
 
 FINANCE_TOOLS = [
     lookup_finance_knowledge,
@@ -12,6 +13,7 @@ FINANCE_TOOLS = [
     calculate_sip_returns,
     assess_risk_profile,
     escalate_to_human,
+    get_visual_context,
 ]
 
 __all__ = [
@@ -21,4 +23,5 @@ __all__ = [
     "calculate_sip_returns",
     "assess_risk_profile",
     "escalate_to_human",
+    "get_visual_context",
 ]
